@@ -247,8 +247,12 @@ if page == "Governance":
         start_date = (current_monday - timedelta(weeks=1)).date()
         end_date = (current_sunday - timedelta(weeks=1)).date()
     elif week_option == "Last 4 Weeks":
+        # E-2: use the 4 most recent COMPLETE weeks (ending last Sunday), excluding
+        # the incomplete current week, so the figure is stable regardless of the
+        # day it is viewed. Last completed Sunday = current_monday - 1 day.
+        last_complete_sunday = (current_monday - timedelta(days=1)).date()
         start_date = (current_monday - timedelta(weeks=4)).date()
-        end_date = current_sunday.date()
+        end_date = last_complete_sunday
     else:
         col_start, col_end = st.columns(2)
         with col_start:

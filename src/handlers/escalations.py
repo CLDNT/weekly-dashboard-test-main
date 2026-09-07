@@ -17,7 +17,11 @@ def run_escalations_import(event: dict, context: Any, secrets: dict) -> dict:
     from src.handlers.quicksight import refresh_quicksight_datasets
 
     db_url = os.environ.get('DATABASE_URL')
-    engine = create_engine(db_url)
+    # DDL (CREATE TABLE / CREATE OR REPLACE VIEW) needs owner/superuser privileges;
+    # report_user lacks CREATE on schema public. Prefer the master URL when available,
+    # matching the apply_database_views pattern.
+    master_url = secrets.get('master_database_url') if secrets else None
+    engine = create_engine(master_url or db_url)
     ddl = """
         CREATE TABLE IF NOT EXISTS escalations (
             id                  SERIAL PRIMARY KEY,
@@ -43,17 +47,31 @@ def run_escalations_import(event: dict, context: Any, secrets: dict) -> dict:
         CREATE INDEX IF NOT EXISTS idx_escalations_status   ON escalations(status_category);
         CREATE INDEX IF NOT EXISTS idx_escalations_created  ON escalations(created_date);
         CREATE OR REPLACE VIEW vw_escalations AS
-        SELECT issue_key, customer_name, epic_key, summary, status, status_category,
-               priority, assignee_name, reporter_name,
+        SELECT issue_key, customer_name, epic_key, summary, description,
+               status, status_category, priority,
+               CASE priority
+                    WHEN 'Highest' THEN 1 WHEN 'High' THEN 2 WHEN 'Medium' THEN 3
+                    WHEN 'Low' THEN 4 WHEN 'Lowest' THEN 5 ELSE 6 END AS priority_order,
+               assignee_name, reporter_name,
                created_date::date AS created_date, updated_date::date AS updated_date,
                resolution_date::date AS resolution_date,
-               days_open, days_to_resolve,
+               status_changed_at::date AS status_changed_at, previous_status,
+               CASE WHEN resolution_date IS NOT NULL
+                    THEN (resolution_date::date - created_date::date)
+                    ELSE (CURRENT_DATE - created_date::date) END AS days_open,
+               CASE WHEN resolution_date IS NOT NULL
+                    THEN (resolution_date::date - created_date::date)
+                    ELSE NULL::integer END AS days_to_resolve,
                EXTRACT(YEAR FROM created_date)::int  AS created_year,
                EXTRACT(MONTH FROM created_date)::int AS created_month,
                TO_CHAR(created_date, 'YYYY-MM')      AS created_month_label,
-               CASE WHEN status_category = 'Done'        THEN 'Resolved'
-                    WHEN status_category = 'In Progress' THEN 'Active'
-                    ELSE 'Open' END                   AS escalation_state
+               CASE WHEN status_category = 'Done'        THEN 'Done'
+                    WHEN status = 'Watching'             THEN 'Watching'
+                    WHEN status_category = 'In Progress' THEN 'In Progress'
+                    ELSE 'New' END                   AS escalation_state,
+               created_date >= (CURRENT_DATE - INTERVAL '7 days') AS is_new,
+               (updated_date >= (CURRENT_DATE - INTERVAL '7 days')
+                OR status_changed_at >= (CURRENT_DATE - INTERVAL '7 days')) AS changed_last_week
         FROM escalations WHERE customer_name IS NOT NULL;
         CREATE OR REPLACE VIEW vw_escalations_by_customer AS
         SELECT customer_name,

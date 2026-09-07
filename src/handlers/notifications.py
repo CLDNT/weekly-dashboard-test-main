@@ -166,7 +166,16 @@ def send_run_status_email(run_summary: dict):
 
     # ── SPICE row ────────────────────────────────────────────────────────────
     spice_count = run_summary.get('spice_triggered', 0)
-    spice_label = f"✅ All triggered successfully" if (spice_count > 0 and status == 'SUCCESS') else f"{spice_count} triggered"
+    spice_succeeded = run_summary.get('spice_succeeded')
+    spice_failed = run_summary.get('spice_failed')
+    if spice_succeeded is not None:
+        # Verified path (A-1): report real terminal outcomes, not just triggers.
+        if spice_failed:
+            spice_label = f"❌ {spice_failed} failed, {spice_succeeded} succeeded of {spice_count}"
+        else:
+            spice_label = f"✅ {spice_succeeded} of {spice_count} refreshed & verified"
+    else:
+        spice_label = f"{spice_count} triggered"
 
     # ── Errors section — classify and enrich each error ─────────────────────
     _SEV_COLOR   = {'CRITICAL': '#c0392b', 'WARNING': '#e67e22', 'INFO': '#2980b9'}

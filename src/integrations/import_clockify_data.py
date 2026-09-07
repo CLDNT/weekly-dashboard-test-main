@@ -349,14 +349,23 @@ def import_time_entries(
     """
     end_date = datetime.now()
 
+    # Overlap window (B-1): even on incremental runs, always re-pull the last
+    # N complete weeks so retroactive Clockify edits and late NB-checkbox toggles
+    # to earlier weeks flow through. Upserts on clockify_entry_id make this safe
+    # (no duplicates). 4 weeks matches the project's existing "recent window".
+    OVERLAP_WEEKS = 4
+
     # Determine import mode and date range
     if incremental and weeks_back is None:
-        # Incremental mode: get data since last successful import
+        # Incremental mode: start from the LESSER of the last watermark and the
+        # overlap floor, so edits within the overlap window are always re-pulled.
         last_import = get_last_import_date(db, 'time_entries')
+        overlap_floor = end_date - timedelta(weeks=OVERLAP_WEEKS)
         if last_import:
-            start_date = last_import
+            start_date = min(last_import, overlap_floor)
             import_type = 'incremental'
-            print(f"\n📥 Importing time entries (incremental since {start_date.strftime('%Y-%m-%d')})...")
+            print(f"\n📥 Importing time entries (incremental since {start_date.strftime('%Y-%m-%d')}, "
+                  f"overlap={OVERLAP_WEEKS}w, watermark was {last_import.strftime('%Y-%m-%d')})...")
         else:
             # No previous import found, do initial 1 year load
             start_date = end_date - timedelta(days=365)
@@ -380,6 +389,7 @@ def import_time_entries(
         users = db.query(ClockifyUser).filter_by(status='active').all()
         total_imported = 0
         total_updated = 0
+        failed_users = []  # B-3: track users whose fetch/import failed
 
         print(f"  Processing {len(users)} active users...")
 
@@ -498,12 +508,36 @@ def import_time_entries(
                 db.commit()
 
             except Exception as e:
+                # B-3: do NOT silently swallow. Record the failed user so the run
+                # can be marked partial and the watermark is NOT advanced past the gap.
                 print(f"  ⚠️  Error fetching entries for {user.name}: {str(e)}")
+                db.rollback()  # discard this user's partial writes; keep prior users' commits
+                failed_users.append(user.name)
                 continue
 
         print(f"✓ Imported {total_imported} new time entries, updated {total_updated} existing")
+        if failed_users:
+            print(f"⚠️  {len(failed_users)} user(s) FAILED to import: {', '.join(failed_users[:20])}"
+                  + (" …" if len(failed_users) > 20 else ""))
 
-        complete_import_log(db, log, total_imported, total_updated, 0)
+        # B-3: if any user failed, mark the run 'partial' (NOT 'success'). Because
+        # get_last_import_date() filters status='success', a partial run does NOT
+        # become the watermark → the next run re-pulls from the last complete window.
+        if failed_users:
+            complete_import_log(
+                db, log, total_imported, total_updated, 0,
+                status='partial',
+                error=f"{len(failed_users)} user(s) failed: {', '.join(failed_users)}"[:2000],
+            )
+        else:
+            complete_import_log(db, log, total_imported, total_updated, 0)
+
+        return {
+            'imported': total_imported,
+            'updated': total_updated,
+            'failed_users': failed_users,
+            'status': 'partial' if failed_users else 'success',
+        }
 
     except Exception as e:
         complete_import_log(db, log, 0, 0, 0, 'failed', str(e))
@@ -529,20 +563,29 @@ def run_import(weeks_back: int = None, incremental: bool = True):
     db = SessionLocal()
     client = ClockifyClient()
 
+    te_summary = {'imported': 0, 'updated': 0, 'failed_users': [], 'status': 'success'}
     try:
         import_users(db, client)
         import_projects(db, client)
-        import_time_entries(db, client, weeks_back=weeks_back, incremental=incremental)
+        te_summary = import_time_entries(db, client, weeks_back=weeks_back, incremental=incremental) or te_summary
 
         print("\n" + "=" * 60)
-        print("✅ Data import completed successfully!")
+        if te_summary.get('failed_users'):
+            print(f"⚠️  Data import completed with PARTIAL failures: "
+                  f"{len(te_summary['failed_users'])} user(s) failed")
+        else:
+            print("✅ Data import completed successfully!")
         print("=" * 60)
+        return te_summary
 
     except Exception as e:
+        # B-3: a hard failure (users/projects import, or unexpected) must NOT be
+        # swallowed as success — roll back and re-raise so the pipeline marks ERROR.
         print(f"\n❌ Import failed: {str(e)}")
         import traceback
         traceback.print_exc()
         db.rollback()
+        raise
     finally:
         db.close()
 

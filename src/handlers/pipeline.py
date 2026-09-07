@@ -131,8 +131,16 @@ def run_pipeline(event: dict, context: Any, secrets: dict) -> dict:
     # Import here after secrets are set
     from src.integrations.import_clockify_data import run_import
 
-    run_import(weeks_back=weeks_back, incremental=incremental)
-    print("Import completed successfully")
+    import_summary = run_import(weeks_back=weeks_back, incremental=incremental)
+    print("Import completed")
+    # B-3: surface per-user import failures so the run is marked ERRORS + alerted,
+    # and so the watermark (which only advances on a fully 'success' log) is honoured.
+    if import_summary and import_summary.get('failed_users'):
+        fu = import_summary['failed_users']
+        run_errors.append(
+            f"Clockify import: {len(fu)} user(s) failed — watermark not advanced past the gap; "
+            f"users: {', '.join(fu[:20])}" + (" …" if len(fu) > 20 else "")
+        )
 
     # ── 3. Jira import ───────────────────────────────────────────────────────
     print("Starting Jira import...")
@@ -262,16 +270,43 @@ def run_pipeline(event: dict, context: Any, secrets: dict) -> dict:
     finally:
         db.close()
 
-    # ── 10. Refresh all QuickSight SPICE datasets ────────────────────────────
-    from src.handlers.quicksight import get_all_dataset_ids, refresh_quicksight_datasets as qs_refresh
+    # ── 10. Refresh all QuickSight SPICE datasets (with verification) ────────
+    from src.handlers.quicksight import (
+        get_all_dataset_ids,
+        refresh_quicksight_datasets as qs_refresh,
+        summarize_spice_results,
+    )
 
     environment = os.environ.get('ENVIRONMENT', 'production')
     all_dataset_ids = get_all_dataset_ids(environment)
     # Allow override from event, otherwise use all datasets
     refresh_dataset_ids = dataset_ids if dataset_ids else all_dataset_ids
-    print(f"Refreshing {len(refresh_dataset_ids)} QuickSight SPICE datasets...")
-    qs_results = qs_refresh(refresh_dataset_ids)
+    print(f"Refreshing {len(refresh_dataset_ids)} QuickSight SPICE datasets (verified)...")
+    qs_results = qs_refresh(refresh_dataset_ids)  # polls each ingestion to terminal state
+    spice_summary = summarize_spice_results(qs_results)
+
+    # A-1: SPICE failures are no longer silent — surface every FAILED/CANCELLED/
+    # TIMEOUT/TRIGGER_FAILED so the run is marked ERRORS and alerted.
     run_summary['spice_triggered'] = len(refresh_dataset_ids)
+    run_summary['spice_succeeded'] = spice_summary['succeeded']
+    run_summary['spice_failed'] = spice_summary['failed']
+    run_summary['spice_results'] = qs_results
+    for msg in spice_summary['error_messages']:
+        run_errors.append(msg)
+
+    if spice_summary['failed'] > 0:
+        alert_body = (
+            f"{spice_summary['failed']} QuickSight SPICE dataset(s) failed to refresh "
+            f"during the {mode} run.\n\n" + "\n".join(spice_summary['error_messages'])
+        )
+        print(f"[spice] ALERT — {alert_body}")
+        if notification_topic:
+            from src.handlers.common import send_sns_notification
+            send_sns_notification(
+                notification_topic,
+                "❌ Weekly Reporting — SPICE refresh FAILED",
+                alert_body,
+            )
 
     # ── 11. Post-run status email ─────────────────────────────────────────────
     if run_errors:

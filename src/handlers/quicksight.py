@@ -88,47 +88,195 @@ def get_all_dataset_ids(environment: str = 'production') -> List[str]:
         'project-hours-summary-prod',
         'project-hours-current-week-prod',
         'category-hours-summary-prod',
+        # KPI Tracking dashboard drill-down datasets (Sheet 2 Practice, Sheet 3 Staff)
+        # Previously refreshed only manually → staff/practice tiles went silently
+        # stale (issue A-2). Now driven by the pipeline SSOT every cycle.
+        'kpi-practice-weekly-prod',
+        'kpi-staff-weekly-prod',
         # MC Service Delivery
         'mc-ticket-activity',
+        # SPICE refresh health tile source (A-1 / A-3) — freshness of the
+        # verified refresh log; refreshed every cycle so the tile self-updates.
+        'spice-freshness',
     ]
 
 
-def refresh_quicksight_datasets(dataset_ids: List[str]):
-    """Trigger QuickSight SPICE refresh for datasets.
+# Terminal ingestion states per QuickSight DescribeIngestion API.
+_QS_TERMINAL_STATES = {'COMPLETED', 'FAILED', 'CANCELLED'}
+# Total time budget for polling all datasets to terminal state. Kept well below
+# the 900s Lambda timeout so the run can still finish, email, and return.
+_SPICE_POLL_BUDGET_SECONDS = 600
+_SPICE_POLL_INTERVAL_SECONDS = 5
+
+
+def _record_spice_results(results: List[dict]):
+    """Persist per-dataset SPICE refresh outcomes to spice_refresh_log.
+
+    Best-effort — never raises. The table is created by migration
+    108_spice_refresh_log.sql; if it is missing we simply skip logging.
+    """
+    if not results:
+        return
+    try:
+        from sqlalchemy import text
+        from src.database.config import engine
+        with engine.begin() as conn:
+            for r in results:
+                conn.execute(text("""
+                    INSERT INTO spice_refresh_log
+                        (dataset_id, ingestion_id, status, rows_ingested, error_message, refreshed_at)
+                    VALUES
+                        (:dataset_id, :ingestion_id, :status, :rows_ingested, :error_message, NOW())
+                """), {
+                    'dataset_id': r.get('dataset_id'),
+                    'ingestion_id': r.get('ingestion_id'),
+                    'status': r.get('status'),
+                    'rows_ingested': r.get('rows_ingested'),
+                    'error_message': (r.get('error') or '')[:2000] or None,
+                })
+    except Exception as e:
+        print(f"[spice] Could not record refresh results (non-fatal): {e}")
+
+
+def refresh_quicksight_datasets(dataset_ids: List[str], wait: bool = True):
+    """Trigger QuickSight SPICE refresh for datasets and verify the outcome.
+
+    Unlike the previous fire-and-forget implementation, this triggers all
+    ingestions and then polls ``describe_ingestion`` until each reaches a
+    terminal state (COMPLETED / FAILED / CANCELLED) or the poll budget is
+    exhausted.  The returned status reflects the REAL terminal state so the
+    caller can mark the run as failed and alert on any FAILED/CANCELLED
+    dataset (issue A-1).
 
     Args:
-        dataset_ids: List of QuickSight dataset IDs to refresh
+        dataset_ids: List of QuickSight dataset IDs to refresh.
+        wait: If True (default), poll each ingestion to a terminal state.
+              If False, behave like the legacy trigger-only path (used only
+              for ad-hoc callers that explicitly do not want to block).
+
+    Returns:
+        List of dicts, one per dataset, with keys:
+          dataset_id, ingestion_id, status, rows_ingested (opt), error (opt)
+        status is one of: COMPLETED | FAILED | CANCELLED | RUNNING
+                          | TIMEOUT | ALREADY_RUNNING | TRIGGER_FAILED
     """
     if not dataset_ids:
-        return
+        return []
+
+    import time
 
     quicksight = boto3.client('quicksight')
     account_id = boto3.client('sts').get_caller_identity()['Account']
 
-    results = []
+    results = []          # final per-dataset outcomes
+    pending = {}          # dataset_id -> ingestion_id still being polled
+
+    # ── Phase 1: trigger all ingestions ──────────────────────────────────────
     for dataset_id in dataset_ids:
+        ingestion_id = f"ingestion-{datetime.now().strftime('%Y%m%d-%H%M%S')}-{dataset_id}"
         try:
-            ingestion_id = f"ingestion-{datetime.now().strftime('%Y%m%d-%H%M%S')}-{dataset_id}"
-            response = quicksight.create_ingestion(
+            quicksight.create_ingestion(
                 DataSetId=dataset_id,
                 IngestionId=ingestion_id,
-                AwsAccountId=account_id
+                AwsAccountId=account_id,
             )
-            results.append({
-                'dataset_id': dataset_id,
-                'status': 'triggered',
-                'ingestion_id': ingestion_id
-            })
             print(f"Triggered QuickSight refresh for dataset {dataset_id}")
+            if wait:
+                pending[dataset_id] = ingestion_id
+            else:
+                results.append({'dataset_id': dataset_id, 'ingestion_id': ingestion_id,
+                                'status': 'RUNNING'})
+        except quicksight.exceptions.ResourceExistsException as e:
+            # An ingestion is already running for this dataset — non-fatal (INFO).
+            print(f"Ingestion already in progress for {dataset_id}: {e}")
+            results.append({'dataset_id': dataset_id, 'ingestion_id': ingestion_id,
+                            'status': 'ALREADY_RUNNING', 'error': str(e)})
+        except quicksight.exceptions.ResourceNotFoundException as e:
+            # A-2/A-4: dataset ID is in the SSOT but does not exist in THIS account
+            # (e.g. a prod-only dataset when running in dev, or a truly-removed one).
+            # Non-fatal: record as SKIPPED_NOT_FOUND so it is visible in the log but
+            # does NOT count as a failure/alert. A real FAILED now means a real problem.
+            print(f"Dataset {dataset_id} not found in this account — skipping (non-fatal)")
+            results.append({'dataset_id': dataset_id, 'ingestion_id': ingestion_id,
+                            'status': 'SKIPPED_NOT_FOUND', 'error': str(e)})
         except Exception as e:
-            print(f"Failed to refresh dataset {dataset_id}: {e}")
-            results.append({
-                'dataset_id': dataset_id,
-                'status': 'failed',
-                'error': str(e)
-            })
+            print(f"Failed to trigger refresh for dataset {dataset_id}: {e}")
+            results.append({'dataset_id': dataset_id, 'ingestion_id': ingestion_id,
+                            'status': 'TRIGGER_FAILED', 'error': str(e)})
+
+    # ── Phase 2: poll pending ingestions to a terminal state ─────────────────
+    if wait and pending:
+        deadline = time.monotonic() + _SPICE_POLL_BUDGET_SECONDS
+        while pending and time.monotonic() < deadline:
+            time.sleep(_SPICE_POLL_INTERVAL_SECONDS)
+            for dataset_id in list(pending.keys()):
+                ingestion_id = pending[dataset_id]
+                try:
+                    ing = quicksight.describe_ingestion(
+                        DataSetId=dataset_id,
+                        IngestionId=ingestion_id,
+                        AwsAccountId=account_id,
+                    )['Ingestion']
+                    state = ing.get('IngestionStatus')
+                    if state in _QS_TERMINAL_STATES:
+                        row = {'dataset_id': dataset_id, 'ingestion_id': ingestion_id,
+                               'status': state}
+                        row_info = ing.get('RowInfo') or {}
+                        if 'RowsIngested' in row_info:
+                            row['rows_ingested'] = row_info['RowsIngested']
+                        if state != 'COMPLETED':
+                            err = ing.get('ErrorInfo') or {}
+                            row['error'] = err.get('Message') or err.get('Type') or state
+                        results.append(row)
+                        del pending[dataset_id]
+                        print(f"Dataset {dataset_id} ingestion {state}")
+                except Exception as e:
+                    # Describe failed — treat as unknown, keep the dataset in
+                    # results as a failure so it is surfaced, and stop polling it.
+                    print(f"describe_ingestion failed for {dataset_id}: {e}")
+                    results.append({'dataset_id': dataset_id, 'ingestion_id': ingestion_id,
+                                    'status': 'FAILED', 'error': f'describe_ingestion error: {e}'})
+                    del pending[dataset_id]
+
+        # Anything still pending after the budget = TIMEOUT (surface it).
+        for dataset_id, ingestion_id in pending.items():
+            print(f"Dataset {dataset_id} ingestion did not finish within poll budget")
+            results.append({'dataset_id': dataset_id, 'ingestion_id': ingestion_id,
+                            'status': 'TIMEOUT',
+                            'error': f'Ingestion not terminal within {_SPICE_POLL_BUDGET_SECONDS}s'})
+
+    # ── Persist outcomes for the freshness view / dashboard tile ─────────────
+    _record_spice_results(results)
 
     return results
+
+
+def summarize_spice_results(results: List[dict]) -> dict:
+    """Summarise refresh outcomes into counts + a list of failure strings.
+
+    Returns dict: {succeeded, failed, running, error_messages: [..]}.
+    ALREADY_RUNNING is treated as non-fatal (INFO), consistent with the
+    email error classifier.
+    """
+    succeeded = failed = running = skipped = 0
+    error_messages = []
+    for r in results or []:
+        status = r.get('status')
+        if status == 'COMPLETED':
+            succeeded += 1
+        elif status in ('ALREADY_RUNNING', 'RUNNING'):
+            running += 1
+        elif status == 'SKIPPED_NOT_FOUND':
+            # Dataset not present in this account — expected in dev / for prod-only
+            # datasets. Non-fatal, tracked separately so it never triggers an alert.
+            skipped += 1
+        else:  # FAILED, CANCELLED, TIMEOUT, TRIGGER_FAILED
+            failed += 1
+            error_messages.append(
+                f"SPICE Refresh: dataset {r.get('dataset_id')} {status} — {r.get('error', '')}"
+            )
+    return {'succeeded': succeeded, 'failed': failed, 'running': running,
+            'skipped': skipped, 'error_messages': error_messages}
 
 
 def update_analysis_week_parameter(week_start_date):
