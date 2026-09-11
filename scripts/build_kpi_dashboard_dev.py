@@ -232,13 +232,46 @@ def line_chart(visual_id, ds_ident_name, x_fid, x_col, x_gran,
 
 # ── Horizontal bar chart ───────────────────────────────────────────────────────
 def horiz_bar(visual_id, ds_ident_name, cat_fid, cat_col, val_fid, val_col, val_agg,
-              title, ref_lines=None):
-    cat = [{
-        'CategoricalDimensionField': {
-            'FieldId': cat_fid,
-            'Column': {'DataSetIdentifier': ds_ident_name, 'ColumnName': cat_col},
-        }
-    }]
+              title, ref_lines=None, drill_levels=None):
+    """
+    Single-level or hierarchical (drill-down) horizontal bar.
+
+    drill_levels: optional list of (field_id, column_name) tuples defining a
+    QuickSight in-visual drill hierarchy. The first tuple is the top level;
+    users click a bar to drill into the next level.
+
+    QuickSight drill-down on a bar chart is implemented via an ExplicitHierarchy
+    in the visual's ColumnHierarchies, NOT by placing multiple fields in the
+    Category field well (a bar chart's Category takes exactly one field). The
+    single Category field is the top drill level; the hierarchy declares the
+    full drill path. See BarChartVisual.column_hierarchies.
+    """
+    column_hierarchies = None
+    if drill_levels:
+        top_fid, top_col = drill_levels[0]
+        cat = [{
+            'CategoricalDimensionField': {
+                'FieldId': top_fid,
+                'Column': {'DataSetIdentifier': ds_ident_name, 'ColumnName': top_col},
+                'HierarchyId': top_fid,
+            }
+        }]
+        column_hierarchies = [{
+            'ExplicitHierarchy': {
+                'HierarchyId': top_fid,
+                'Columns': [
+                    {'DataSetIdentifier': ds_ident_name, 'ColumnName': col}
+                    for _fid, col in drill_levels
+                ],
+            }
+        }]
+    else:
+        cat = [{
+            'CategoricalDimensionField': {
+                'FieldId': cat_fid,
+                'Column': {'DataSetIdentifier': ds_ident_name, 'ColumnName': cat_col},
+            }
+        }]
     val = [{
         'NumericalMeasureField': {
             'FieldId': val_fid,
@@ -259,13 +292,15 @@ def horiz_bar(visual_id, ds_ident_name, cat_fid, cat_col, val_fid, val_col, val_
     if ref_lines:
         cfg['ReferenceLines'] = ref_lines
 
-    return {
-        'BarChartVisual': {
-            'VisualId': visual_id,
-            'Title': {'Visibility': 'VISIBLE', 'FormatText': {'PlainText': title}},
-            'ChartConfiguration': cfg,
-        }
+    visual = {
+        'VisualId': visual_id,
+        'Title': {'Visibility': 'VISIBLE', 'FormatText': {'PlainText': title}},
+        'ChartConfiguration': cfg,
     }
+    if column_hierarchies:
+        visual['ColumnHierarchies'] = column_hierarchies
+
+    return {'BarChartVisual': visual}
 
 
 # ── Stacked vertical bar chart ─────────────────────────────────────────────────
@@ -603,13 +638,15 @@ def build_sheet2():
 
     bar_util = horiz_bar(
         'bar-s2-util', DS, 'kp-bc1', 'practice_alignment', 'kp-bv1', 'weighted_billable_util', 'AVERAGE',
-        'Billable Utilization % by Practice',
+        'Billable Utilization % by Line of Business (drill to Practice)',
         ref_lines=[ref_line('Target 75%', 75, 'DASHED', GREY, 'BAR')],
+        drill_levels=[('kp-bc1', 'line_of_business'), ('kp-bc1d', 'practice_alignment')],
     )
     bar_comp = horiz_bar(
         'bar-s2-compliance', DS, 'kp-bc2', 'practice_alignment', 'kp-bv2', 'compliance_pct', 'AVERAGE',
-        'Compliance % by Practice',
+        'Compliance % by Line of Business (drill to Practice)',
         ref_lines=[ref_line('Target 95%', 95, 'DASHED', GREY, 'BAR')],
+        drill_levels=[('kp-bc2', 'line_of_business'), ('kp-bc2d', 'practice_alignment')],
     )
 
     util_trend = line_chart(
@@ -682,8 +719,13 @@ def build_sheet3():
 
     bar_comp = horiz_bar(
         'bar-s3-compliance', DS, 'st-bc1', 'pod_assignment', 'st-bv1', 'compliance_pct_calc', 'AVERAGE',
-        'Compliance % by POD',
+        'Compliance % by Line of Business (drill to Practice \u2192 POD)',
         ref_lines=[ref_line('Target 95%', 95, 'DASHED', GREY, 'BAR')],
+        drill_levels=[
+            ('st-bc1', 'line_of_business'),
+            ('st-bc1p', 'practice_alignment'),
+            ('st-bc1d', 'pod_assignment'),
+        ],
     )
     util_trend = line_chart(
         'chart-s3-util-trend', DS, 'st-xt1', 'week_start', 'WEEK',

@@ -32,32 +32,30 @@ Resources:
         Fn::ImportValue: CloudelligentQuickSightThemeArn
       Definition:
         DataSetIdentifierDeclarations:
-        - Identifier: escalations
-          DataSetArn: arn:aws:quicksight:us-east-1:961341524729:dataset/escalations-detail
-        - Identifier: capacity_plan
-          DataSetArn: arn:aws:quicksight:us-east-1:961341524729:dataset/resource-capacity-plan
-        - Identifier: util_history
-          DataSetArn: arn:aws:quicksight:us-east-1:961341524729:dataset/utilization-history
-        - Identifier: project_hours_summary
-          DataSetArn: arn:aws:quicksight:us-east-1:961341524729:dataset/project-hours-summary-prod
-        - Identifier: mc_activity
-          DataSetArn: arn:aws:quicksight:us-east-1:961341524729:dataset/mc-ticket-activity
         - Identifier: ps_at_risk
           DataSetArn: arn:aws:quicksight:us-east-1:961341524729:dataset/ps-projects-at-risk
+        - Identifier: capacity_plan
+          DataSetArn: arn:aws:quicksight:us-east-1:961341524729:dataset/resource-capacity-plan
+        - Identifier: escalations
+          DataSetArn: arn:aws:quicksight:us-east-1:961341524729:dataset/escalations-detail
         - Identifier: productive_util
           DataSetArn: arn:aws:quicksight:us-east-1:961341524729:dataset/productive-utilization
-        - Identifier: compliance_history
-          DataSetArn: arn:aws:quicksight:us-east-1:961341524729:dataset/time-compliance-history
         - Identifier: ps_stage
           DataSetArn: arn:aws:quicksight:us-east-1:961341524729:dataset/ps-stage-trend
         - Identifier: compliance
           DataSetArn: arn:aws:quicksight:us-east-1:961341524729:dataset/clockify-missing-time-submissions-prod
         - Identifier: mc_at_risk
           DataSetArn: arn:aws:quicksight:us-east-1:961341524729:dataset/mc-projects-at-risk
+        - Identifier: spice_freshness
+          DataSetArn: arn:aws:quicksight:us-east-1:961341524729:dataset/spice-freshness
+        - Identifier: project_hours_summary
+          DataSetArn: arn:aws:quicksight:us-east-1:961341524729:dataset/project-hours-summary-prod
         - Identifier: ps_projects
           DataSetArn: arn:aws:quicksight:us-east-1:961341524729:dataset/ps-project-status-view
         - Identifier: kpi_snapshots
           DataSetArn: arn:aws:quicksight:us-east-1:961341524729:dataset/kpi-weekly-snapshots-prod
+        - Identifier: mc_activity
+          DataSetArn: arn:aws:quicksight:us-east-1:961341524729:dataset/mc-ticket-activity
         Sheets:
         - SheetId: sheet-weekly-pulse
           Name: Weekly Pulse
@@ -2617,349 +2615,6 @@ Resources:
                   RowIndex: 4
                   RowSpan: 4
           ContentType: INTERACTIVE
-        - SheetId: sheet-compliance-history
-          Name: Compliance History
-          Visuals:
-          - KPIVisual:
-              VisualId: kpi-ch-compliance
-              Title:
-                Visibility: VISIBLE
-                FormatText:
-                  PlainText: Latest Week Compliance %
-              Subtitle:
-                Visibility: VISIBLE
-              ChartConfiguration:
-                FieldWells:
-                  Values:
-                  - NumericalMeasureField:
-                      FieldId: kpi-ch-v
-                      Column:
-                        DataSetIdentifier: compliance_history
-                        ColumnName: is_compliant
-                      AggregationFunction:
-                        SimpleNumericalAggregation: AVERAGE
-                  TargetValues: []
-                  TrendGroups: []
-                SortConfiguration: {}
-                KPIOptions:
-                  PrimaryValueDisplayType: ACTUAL
-                  Sparkline:
-                    Visibility: HIDDEN
-                    Type: LINE
-                    TooltipVisibility: HIDDEN
-              Actions: []
-              ColumnHierarchies: []
-          - LineChartVisual:
-              VisualId: line-ch-trend
-              Title:
-                Visibility: VISIBLE
-                FormatText:
-                  PlainText: Weekly Compliance Trend by Practice
-              Subtitle:
-                Visibility: VISIBLE
-              ChartConfiguration:
-                FieldWells:
-                  LineChartAggregatedFieldWells:
-                    Category:
-                    - DateDimensionField:
-                        FieldId: line-ch-x
-                        Column:
-                          DataSetIdentifier: compliance_history
-                          ColumnName: week_start
-                        DateGranularity: WEEK
-                        HierarchyId: line-ch-x
-                    Values:
-                    - NumericalMeasureField:
-                        FieldId: line-ch-y
-                        Column:
-                          DataSetIdentifier: compliance_history
-                          ColumnName: is_compliant
-                        AggregationFunction:
-                          SimpleNumericalAggregation: AVERAGE
-                    Colors:
-                    - CategoricalDimensionField:
-                        FieldId: line-ch-color
-                        Column:
-                          DataSetIdentifier: compliance_history
-                          ColumnName: practice_alignment
-                SortConfiguration: {}
-                Type: LINE
-                Legend:
-                  Visibility: VISIBLE
-                  Position: BOTTOM
-                ReferenceLines:
-                - Status: ENABLED
-                  DataConfiguration:
-                    StaticConfiguration:
-                      Value: 0.9
-                    AxisBinding: PRIMARY_YAXIS
-                    SeriesType: LINE
-                  StyleConfiguration:
-                    Pattern: DASHED
-                    Color: '#33A94F'
-                  LabelConfiguration:
-                    CustomLabelConfiguration:
-                      CustomLabel: Target 90%
-                    FontConfiguration:
-                      FontSize:
-                        Relative: MEDIUM
-                    HorizontalPosition: RIGHT
-                    VerticalPosition: ABOVE
-              Actions: []
-              ColumnHierarchies:
-              - DateTimeHierarchy:
-                  HierarchyId: line-ch-x
-                  DrillDownFilters: []
-          - BarChartVisual:
-              VisualId: bar-ch-quarterly
-              Title:
-                Visibility: VISIBLE
-                FormatText:
-                  PlainText: Quarterly Compliance Count by Practice
-              Subtitle:
-                Visibility: VISIBLE
-              ChartConfiguration:
-                FieldWells:
-                  BarChartAggregatedFieldWells:
-                    Category:
-                    - CategoricalDimensionField:
-                        FieldId: bar-ch-c
-                        Column:
-                          DataSetIdentifier: compliance_history
-                          ColumnName: quarter_label
-                    Values:
-                    - NumericalMeasureField:
-                        FieldId: bar-ch-v
-                        Column:
-                          DataSetIdentifier: compliance_history
-                          ColumnName: is_compliant
-                        AggregationFunction:
-                          SimpleNumericalAggregation: SUM
-                    Colors:
-                    - CategoricalDimensionField:
-                        FieldId: bar-ch-color
-                        Column:
-                          DataSetIdentifier: compliance_history
-                          ColumnName: practice_alignment
-                SortConfiguration: {}
-                Orientation: VERTICAL
-                BarsArrangement: STACKED
-                Legend:
-                  Visibility: VISIBLE
-                  Position: BOTTOM
-                DataLabels:
-                  Visibility: HIDDEN
-                  Overlap: DISABLE_OVERLAP
-              Actions: []
-              ColumnHierarchies: []
-          Layouts:
-          - Configuration:
-              GridLayout:
-                Elements:
-                - ElementId: kpi-ch-compliance
-                  ElementType: VISUAL
-                  ColumnIndex: 0
-                  ColumnSpan: 36
-                  RowIndex: 0
-                  RowSpan: 4
-                - ElementId: line-ch-trend
-                  ElementType: VISUAL
-                  ColumnIndex: 0
-                  ColumnSpan: 36
-                  RowIndex: 4
-                  RowSpan: 14
-                - ElementId: bar-ch-quarterly
-                  ElementType: VISUAL
-                  ColumnIndex: 0
-                  ColumnSpan: 36
-                  RowIndex: 18
-                  RowSpan: 14
-                CanvasSizeOptions:
-                  ScreenCanvasSizeOptions:
-                    ResizeOption: RESPONSIVE
-          ContentType: INTERACTIVE
-        - SheetId: sheet-util-history
-          Name: Utilization History
-          Visuals:
-          - KPIVisual:
-              VisualId: kpi-uh-billable
-              Title:
-                Visibility: VISIBLE
-                FormatText:
-                  PlainText: Latest Week Avg Billable Hours
-              Subtitle:
-                Visibility: VISIBLE
-              ChartConfiguration:
-                FieldWells:
-                  Values:
-                  - NumericalMeasureField:
-                      FieldId: kpi-uh-v
-                      Column:
-                        DataSetIdentifier: util_history
-                        ColumnName: billable_hours
-                      AggregationFunction:
-                        SimpleNumericalAggregation: AVERAGE
-                  TargetValues: []
-                  TrendGroups: []
-                SortConfiguration: {}
-                KPIOptions:
-                  PrimaryValueDisplayType: ACTUAL
-                  Sparkline:
-                    Visibility: HIDDEN
-                    Type: LINE
-                    TooltipVisibility: HIDDEN
-              Actions: []
-              ColumnHierarchies: []
-          - KPIVisual:
-              VisualId: kpi-uh-nb-productive
-              Title:
-                Visibility: VISIBLE
-                FormatText:
-                  PlainText: Latest Week Avg NB Productive Hours
-              Subtitle:
-                Visibility: VISIBLE
-              ChartConfiguration:
-                FieldWells:
-                  Values:
-                  - NumericalMeasureField:
-                      FieldId: kpi-uh-nb-v
-                      Column:
-                        DataSetIdentifier: util_history
-                        ColumnName: nb_productive_hours
-                      AggregationFunction:
-                        SimpleNumericalAggregation: AVERAGE
-                  TargetValues: []
-                  TrendGroups: []
-                SortConfiguration: {}
-                KPIOptions:
-                  PrimaryValueDisplayType: ACTUAL
-                  Sparkline:
-                    Visibility: HIDDEN
-                    Type: LINE
-                    TooltipVisibility: HIDDEN
-              Actions: []
-              ColumnHierarchies: []
-          - LineChartVisual:
-              VisualId: line-uh-trend
-              Title:
-                Visibility: VISIBLE
-                FormatText:
-                  PlainText: Weekly Utilization Trend — Billable vs NB Productive
-              Subtitle:
-                Visibility: VISIBLE
-              ChartConfiguration:
-                FieldWells:
-                  LineChartAggregatedFieldWells:
-                    Category:
-                    - DateDimensionField:
-                        FieldId: line-uh-x
-                        Column:
-                          DataSetIdentifier: util_history
-                          ColumnName: week_start
-                        DateGranularity: WEEK
-                        HierarchyId: line-uh-x
-                    Values:
-                    - NumericalMeasureField:
-                        FieldId: line-uh-y0
-                        Column:
-                          DataSetIdentifier: util_history
-                          ColumnName: billable_hours
-                        AggregationFunction:
-                          SimpleNumericalAggregation: AVERAGE
-                    - NumericalMeasureField:
-                        FieldId: line-uh-y1
-                        Column:
-                          DataSetIdentifier: util_history
-                          ColumnName: nb_productive_hours
-                        AggregationFunction:
-                          SimpleNumericalAggregation: AVERAGE
-                    Colors: []
-                SortConfiguration: {}
-                Type: LINE
-                Legend:
-                  Visibility: VISIBLE
-                  Position: BOTTOM
-              Actions: []
-              ColumnHierarchies:
-              - DateTimeHierarchy:
-                  HierarchyId: line-uh-x
-                  DrillDownFilters: []
-          - BarChartVisual:
-              VisualId: bar-uh-quarterly
-              Title:
-                Visibility: VISIBLE
-                FormatText:
-                  PlainText: Quarterly Avg Billable Hours by Practice
-              Subtitle:
-                Visibility: VISIBLE
-              ChartConfiguration:
-                FieldWells:
-                  BarChartAggregatedFieldWells:
-                    Category:
-                    - CategoricalDimensionField:
-                        FieldId: bar-uh-c
-                        Column:
-                          DataSetIdentifier: util_history
-                          ColumnName: quarter_label
-                    Values:
-                    - NumericalMeasureField:
-                        FieldId: bar-uh-v
-                        Column:
-                          DataSetIdentifier: util_history
-                          ColumnName: billable_hours
-                        AggregationFunction:
-                          SimpleNumericalAggregation: AVERAGE
-                    Colors:
-                    - CategoricalDimensionField:
-                        FieldId: bar-uh-color
-                        Column:
-                          DataSetIdentifier: util_history
-                          ColumnName: practice_alignment
-                SortConfiguration: {}
-                Orientation: VERTICAL
-                BarsArrangement: CLUSTERED
-                VisualPalette:
-                  ChartColor: '#0089DD'
-                Legend:
-                  Visibility: VISIBLE
-                  Position: BOTTOM
-                DataLabels:
-                  Visibility: HIDDEN
-                  Overlap: DISABLE_OVERLAP
-              Actions: []
-              ColumnHierarchies: []
-          Layouts:
-          - Configuration:
-              GridLayout:
-                Elements:
-                - ElementId: kpi-uh-billable
-                  ElementType: VISUAL
-                  ColumnIndex: 0
-                  ColumnSpan: 18
-                  RowIndex: 0
-                  RowSpan: 4
-                - ElementId: kpi-uh-nb-productive
-                  ElementType: VISUAL
-                  ColumnIndex: 18
-                  ColumnSpan: 18
-                  RowIndex: 0
-                  RowSpan: 4
-                - ElementId: line-uh-trend
-                  ElementType: VISUAL
-                  ColumnIndex: 0
-                  ColumnSpan: 36
-                  RowIndex: 4
-                  RowSpan: 14
-                - ElementId: bar-uh-quarterly
-                  ElementType: VISUAL
-                  ColumnIndex: 0
-                  ColumnSpan: 36
-                  RowIndex: 18
-                  RowSpan: 14
-                CanvasSizeOptions:
-                  ScreenCanvasSizeOptions:
-                    ResizeOption: RESPONSIVE
-          ContentType: INTERACTIVE
         - SheetId: sheet-resource-capacity
           Name: Resource Capacity
           Visuals:
@@ -3053,7 +2708,15 @@ Resources:
                         AggregationFunction:
                           SimpleNumericalAggregation: SUM
                 SortConfiguration:
-                  FieldSortOptions: []
+                  FieldSortOptions:
+                  - FieldId: pivot-rc-col
+                    SortBy:
+                      Column:
+                        SortBy:
+                          DataSetIdentifier: capacity_plan
+                          ColumnName: week_start
+                        Direction: ASC
+                        AggregationFunction: {}
                 TableOptions:
                   MetricPlacement: ROW
                   SingleMetricVisibility: HIDDEN
@@ -3114,6 +2777,152 @@ Resources:
                   ScreenCanvasSizeOptions:
                     ResizeOption: RESPONSIVE
           ContentType: INTERACTIVE
+        - SheetId: sheet-coo-freshness
+          Name: Data Freshness
+          Visuals:
+          - KPIVisual:
+              VisualId: coo-fresh-ok
+              Title:
+                Visibility: VISIBLE
+                FormatText:
+                  PlainText: SPICE Datasets OK
+              Subtitle:
+                Visibility: VISIBLE
+              ChartConfiguration:
+                FieldWells:
+                  Values:
+                  - NumericalMeasureField:
+                      FieldId: coo-fresh-ok-f
+                      Column:
+                        DataSetIdentifier: spice_freshness
+                        ColumnName: datasets_ok
+                      AggregationFunction:
+                        SimpleNumericalAggregation: MAX
+                  TargetValues: []
+                  TrendGroups: []
+                SortConfiguration: {}
+                KPIOptions:
+                  PrimaryValueDisplayType: ACTUAL
+                  Sparkline:
+                    Visibility: HIDDEN
+                    Type: LINE
+                    TooltipVisibility: HIDDEN
+                  VisualLayoutOptions:
+                    StandardLayout:
+                      Type: VERTICAL
+              Actions: []
+              ColumnHierarchies: []
+          - KPIVisual:
+              VisualId: coo-fresh-tracked
+              Title:
+                Visibility: VISIBLE
+                FormatText:
+                  PlainText: Datasets Tracked
+              Subtitle:
+                Visibility: VISIBLE
+              ChartConfiguration:
+                FieldWells:
+                  Values:
+                  - NumericalMeasureField:
+                      FieldId: coo-fresh-tracked-f
+                      Column:
+                        DataSetIdentifier: spice_freshness
+                        ColumnName: datasets_tracked
+                      AggregationFunction:
+                        SimpleNumericalAggregation: MAX
+                  TargetValues: []
+                  TrendGroups: []
+                SortConfiguration: {}
+                KPIOptions:
+                  PrimaryValueDisplayType: ACTUAL
+                  Sparkline:
+                    Visibility: HIDDEN
+                    Type: LINE
+                    TooltipVisibility: HIDDEN
+                  VisualLayoutOptions:
+                    StandardLayout:
+                      Type: VERTICAL
+              Actions: []
+              ColumnHierarchies: []
+          - KPIVisual:
+              VisualId: coo-fresh-failed
+              Title:
+                Visibility: VISIBLE
+                FormatText:
+                  PlainText: Datasets Failed
+              Subtitle:
+                Visibility: VISIBLE
+              ChartConfiguration:
+                FieldWells:
+                  Values:
+                  - NumericalMeasureField:
+                      FieldId: coo-fresh-failed-f
+                      Column:
+                        DataSetIdentifier: spice_freshness
+                        ColumnName: datasets_failed
+                      AggregationFunction:
+                        SimpleNumericalAggregation: MAX
+                  TargetValues: []
+                  TrendGroups: []
+                SortConfiguration: {}
+                KPIOptions:
+                  PrimaryValueDisplayType: ACTUAL
+                  Sparkline:
+                    Visibility: HIDDEN
+                    Type: LINE
+                    TooltipVisibility: HIDDEN
+                  VisualLayoutOptions:
+                    StandardLayout:
+                      Type: VERTICAL
+              Actions: []
+              ColumnHierarchies: []
+          - TableVisual:
+              VisualId: coo-fresh-asof
+              Title:
+                Visibility: VISIBLE
+                FormatText:
+                  PlainText: Data as of (last successful SPICE refresh)
+              Subtitle:
+                Visibility: VISIBLE
+              ChartConfiguration:
+                FieldWells:
+                  TableUnaggregatedFieldWells:
+                    Values:
+                    - FieldId: coo-fresh-asof-f
+                      Column:
+                        DataSetIdentifier: spice_freshness
+                        ColumnName: last_successful_display
+                SortConfiguration: {}
+              Actions: []
+          Layouts:
+          - Configuration:
+              GridLayout:
+                Elements:
+                - ElementId: coo-fresh-ok
+                  ElementType: VISUAL
+                  ColumnIndex: 0
+                  ColumnSpan: 6
+                  RowIndex: 0
+                  RowSpan: 6
+                - ElementId: coo-fresh-tracked
+                  ElementType: VISUAL
+                  ColumnIndex: 6
+                  ColumnSpan: 6
+                  RowIndex: 0
+                  RowSpan: 6
+                - ElementId: coo-fresh-failed
+                  ElementType: VISUAL
+                  ColumnIndex: 12
+                  ColumnSpan: 6
+                  RowIndex: 0
+                  RowSpan: 6
+                - ElementId: coo-fresh-asof
+                  ElementType: VISUAL
+                  ColumnIndex: 0
+                  ColumnSpan: 18
+                  RowIndex: 6
+                  RowSpan: 6
+          ContentType: INTERACTIVE
         CalculatedFields:
         - DataSetIdentifier: kpi_snapshots
           Name: other_billable_hours
@@ -3127,7 +2936,7 @@ Resources:
             Name: pWeekStart
             DefaultValues:
               StaticValues:
-              - 2026-06-22 20:00:00-04:00
+              - '2026-06-23T05:00:00+05:00'
             TimeGranularity: DAY
         FilterGroups:
         - FilterGroupId: fg-kpi-s1
@@ -3235,6 +3044,9 @@ Resources:
                 - kpi-tu-billable
                 - kpi-tu-compliance
                 - kpi-tu-presales
+                - kpi-tu-nb-productive
+                - kpi-tu-nb-nonproductive
+                - kpi-tu-missing
           Status: ENABLED
           CrossDataset: SINGLE_DATASET
         - FilterGroupId: fg-util-s5
@@ -3449,14 +3261,6 @@ Resources:
               NullValueFormatConfiguration:
                 NullString: '-'
         - Column:
-            DataSetIdentifier: compliance_history
-            ColumnName: week_start
-          FormatConfiguration:
-            DateTimeFormatConfiguration:
-              DateTimeFormat: MM/DD/YY
-              NullValueFormatConfiguration:
-                NullString: '-'
-        - Column:
             DataSetIdentifier: kpi_snapshots
             ColumnName: week_start_date
           FormatConfiguration:
@@ -3482,14 +3286,6 @@ Resources:
                 NullString: '-'
         - Column:
             DataSetIdentifier: ps_projects
-            ColumnName: week_start
-          FormatConfiguration:
-            DateTimeFormatConfiguration:
-              DateTimeFormat: MM/DD/YY
-              NullValueFormatConfiguration:
-                NullString: '-'
-        - Column:
-            DataSetIdentifier: util_history
             ColumnName: week_start
           FormatConfiguration:
             DateTimeFormatConfiguration:

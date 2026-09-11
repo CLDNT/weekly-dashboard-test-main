@@ -2,7 +2,9 @@
 
 **Date:** 2026-08-28
 **Account:** 961341524729 | **Region:** us-east-1
-**Purpose:** A single high-level view of (1) the current architecture, (2) the three data-accuracy fixes — NB Non-Productive, NB Productive (billable classifier), and Clockify brace removal — (3) the impact of the refactored Lambda, and (4) the proposed new ingestion architecture.
+**Purpose:** A single high-level view of (1) the current architecture, (2) the data-accuracy fixes — NB classification via Clockify custom fields, and Clockify brace removal — (3) the impact of the refactored Lambda, and (4) the proposed new ingestion architecture.
+
+> **Update (2026-08-28):** The NB Productive / NB Non-Productive metrics are now sourced from two explicit Clockify CHECKBOX custom fields (`Non Bill Productive`, `Non Bill Non Productive`), deployed to dev on 2026-08-17 and to the leadership account on 2026-08-18. This **supersedes** the earlier SQL-classifier approach (`project_type` + `ps_project_mapping` heuristic) that previous drafts of §2.1–§2.2 described. See §2.1 below for the current design and the archived note for the prior approach.
 
 ---
 
@@ -52,46 +54,48 @@ Secondary UI: ECS Fargate Streamlit dashboard (write ops, forecast uploads)
 - **Single point of failure and change:** one 2,034-line handler with 30 modes. A bug in any mode shares the same execution environment as the production import. The full 19 MB package must be redeployed to fix any single mode.
 - **IaC drift:** Lambda code, EventBridge payloads, and Bedrock/SES IAM permissions are managed outside CloudFormation. A stack update risks silently overwriting live behavior.
 - **Reliability gaps:** single-AZ RDS, no DLQ on the import Lambda, migrations replay on every Streamlit restart (no tracking table), 9 duplicate migration numbers.
-- **Accuracy gaps:** KPI values written by `kpi_snapshot.py` used the wrong classifier and formula (see §2), and older base data still carried Clockify's brace formatting (see §2.3).
+- **Accuracy gaps:** NB classification originally relied on an indirect `project_type` + `ps_project_mapping` heuristic in `kpi_snapshot.py` and the SQL views, which mis-computed both NB metrics (see §2.1). This has been replaced by two explicit Clockify checkbox custom fields. Older base data also carried Clockify's brace formatting (see §2.2).
 - **Health at last check:** the import Lambda ran at ~35.6% error rate — core imports succeeded but the QuickSight-refresh tail failed (`get_quicksight_dataset_ids` NameError) and a view schema conflict (`42P16`) surfaced during view recreation.
 
 ---
 
 ## 2. Data-Accuracy Fixes
 
-Three independent fixes correct the numbers the COO sees. Two are in the KPI computation logic (`kpi_snapshot.py`); one is a data-cleanup migration.
+Two fixes correct the numbers the COO sees. The first replaces the indirect NB classification heuristic with two explicit Clockify custom fields; the second is a data-cleanup migration.
 
-### 2.1 Fix — NB Non-Productive Hours
+### 2.1 Fix — NB Classification via Clockify Custom Fields (current approach)
 
-**Symptom:** The Weekly Pulse "NB Non-Productive Hours" tile showed ~0.00 when the true value was ~1,142 hrs/week (97% underreported for week 2026-06-29).
+**Symptom:** Both NB tiles were wrong. NB Non-Productive showed ~0.00 when the true value was ~1,142 hrs/week (97% underreported, week 2026-06-29); NB Productive over-counted because it swept in all `billable = false` hours. The root cause was that NB status was *inferred* from `project_type` + `ps_project_mapping` + mapped-client heuristics in `kpi_snapshot.py` and the SQL views — an indirect classification that never matched how the business actually tags work.
 
-**Business definition (stakeholder-confirmed):** NB Non-Productive = per person, per week:
+**The fix (deployed dev 2026-08-17, leadership 2026-08-18):** classify NB work from two explicit Clockify **CHECKBOX** custom fields on time entries, set by staff at logging time, instead of inferring it:
 
-- **Component A (explicit):** hours logged to non-billable projects — `SUM(duration_hours WHERE billable = false)`
-- **Component B (implicit):** unlogged capacity — `GREATEST(0, weekly_capacity − total_logged)`
-- Total = `SUM(A + B)` across active, non-exempt staff.
+- `Non Bill Productive` (Clockify field ID `69dfd7600828d1ece13fc540`)
+- `Non Bill Non Productive` (Clockify field ID `69dfd83e8e5e4984d4a0a35e`)
 
-**Two root-cause errors:**
+Implementation:
 
-1. Component A was computed correctly but written to the wrong column (`productive_nb_hours`) — the dashboard reads `nb_nonproductive_hours`, which only received Component B.
+1. **Ingest** — `clockify_client.get_time_entries()` now sends `hydrated=true` so custom-field values appear in the API response; `import_clockify_data.py` reads the two checkboxes from `customFieldValues` on each entry.
 
-2. Component B was computed at the **aggregate** level (`max(0, total_available − total_logged)`), so one person's overtime cancelled another's idle time.
+2. **Schema (migration 105)** — added `is_nb_productive BOOLEAN` and `is_nb_non_productive BOOLEAN` to `clockify_detailed_time_entries`.
 
-**The fix:** replace the two aggregate queries with a single **per-user** query that computes A and B per person, applies `GREATEST(0, …)` per user, then sums. Result for week 2026-06-29 moved from 0.00 → correct 1,142.33 hrs. No SQL migration needed (column already exists); requires Lambda redeploy plus a historical backfill and SPICE refresh.
+3. **KPI logic** — `kpi_snapshot.py` replaced the `project_type` + `ps_project_mapping` + mapped-client CTE with direct reads: NB Productive = `WHERE te.is_nb_productive = TRUE`; NB Non-Productive = `WHERE te.is_nb_non_productive = TRUE` plus the per-user capacity gap `GREATEST(0, weekly_capacity − total_logged)`.
 
-### 2.2 Fix — NB Productive Hours (billable classifier)
+4. **Views (migration 106)** — `vw_productive_utilization`, `vw_practice_kpi_weekly`, and `vw_kpi_staff_weekly` rewritten to read the checkbox columns directly, dropping the JOINs to `clockify_projects` and `mapped_clients`. Required `DROP VIEW … CASCADE` + `CREATE` (not `CREATE OR REPLACE`) because the query structure changed; the CASCADE also dropped and recreated `vw_utilization_history`.
 
-**Symptom:** The "NB Productive Hours" tile showed ~802 hrs/week when the correct value was ~77 hrs/week — a ~10× over-count.
+**Verified results (week 2026-08-10):**
 
-**Root cause:** `productive_nb_hours` counted **all** `billable = false` hours with no `project_type` filter. That sweeps in Overhead, Training/Certs, Internal Initiatives, Product Development, and Presales — all of which are productive non-billable work, not non-productive.
+| Account | NB Productive | NB Non-Productive |
+|---------|---------------|-------------------|
+| Leadership (961341524729) | 557.46 hrs (view) / 606.96 hrs (snapshot) | 749.63 hrs (view) / 874.70 hrs (snapshot, incl. capacity gap) |
+| Dev (604775478093) | 589.44 hrs | 697.13 hrs (view) / 934.47 hrs (snapshot, incl. capacity gap) |
 
-**The correct classifier** (matching `vw_productive_utilization`): NB Productive = `billable = false` **AND** `project_type IN ('Non Bill Productive', 'Overtime', 'Presales')` (plus mapped-client logic). Everything else that is `billable = false` is the residual NB Non-Productive.
+**Data availability caveat:** the checkboxes were added to Clockify in **April 2026**, so entries before then have both flags `FALSE`. Jan 2025 – Mar 2026 shows no NB custom-field data; May 2026 onward is fully adopted. Historical NB figures before April 2026 are not reconstructable from this source.
 
-**Status and dependency:** the billable/non-billable classifier audit (2026-07-07) flagged this as still open after the first NB Non-Productive fix. It also affects the `nb_logged` base of the NB Non-Productive metric: using raw `billable = false` there over-counts by ~147 hrs/week (1,142 vs the view-aligned ~995). The corrective step is to make `kpi_snapshot.py` use the same `project_type`-aware classifier the SQL views already use, so the KPI cards and the per-person utilization table agree.
+**Deployment dependencies:** requires Lambda redeploy, a full 52-week Clockify re-import (to populate the new columns), view rewrites, KPI snapshot backfill per week, and SPICE refresh. Two dashboard follow-ups were also needed: adding the NB tiles to the COO Operational Dashboard's week filter scope (they were showing unfiltered MAX), and re-passing `ThemeArn` on `update_dashboard` to avoid dropping the brand theme. See `docs/nb-custom-fields-deployment-dev.md` and `docs/nb-custom-fields-deployment-leadership.md`.
 
-**Note on the two metrics:** they are related but distinct. NB Non-Productive (§2.1) fixed the *formula* (per-user A + B). NB Productive (§2.2) fixes the *classifier* (project_type, not raw `billable`). Both must land for the Weekly Pulse tiles to reconcile with the row-level views.
+> **Archived — prior SQL-classifier approach (superseded):** Earlier drafts computed both metrics indirectly. NB Non-Productive was fixed by moving to a per-user Component A (`SUM(hours WHERE billable=false)`) + Component B (per-user capacity gap) formula, correcting a wrong-column write and an aggregate-level cancellation bug. NB Productive was to be fixed with a classifier `billable = false AND project_type IN ('Non Bill Productive','Overtime','Presales')` plus mapped-client logic. This heuristic proved fragile and dependent on project-type mapping accuracy, and was replaced by the explicit checkbox fields above. The earlier "~77 hrs/week correct NB Productive" figure came from that abandoned approach and does not match the checkbox-sourced numbers.
 
-### 2.3 Fix — Clockify Brace Removal (Migration 107)
+### 2.2 Fix — Clockify Brace Removal (Migration 107)
 
 **Symptom:** Clockify returns DROPDOWN custom-field values wrapped in braces — `{Bravo}`, `{"Professional Services"}`. Older data imported before the ingest-time strip still carries braces in the base tables, causing:
 
@@ -129,7 +133,7 @@ The current-state assessment recommends **not** aggressively splitting the monol
 ### 3.3 Risks to manage during refactor
 
 - **IaC reconciliation first:** because Bedrock/SES permissions and EventBridge payloads live outside CloudFormation today, they must be brought into IaC *before* any stack update — otherwise the refactor deploy silently deletes them and breaks compliance email and AI analysis.
-- **KPI fixes must ship with the redeploy:** the NB Non-Productive and NB Productive fixes (§2.1–2.2) and the `analyze_project_health.py` brace fix (§2.3) all require a Lambda redeploy plus a historical backfill and SPICE refresh. Sequence these together to avoid multiple redeploys.
+- **KPI fixes must ship with the redeploy:** the NB custom-fields classification change (§2.1) and the `analyze_project_health.py` brace fix (§2.2) both require a Lambda redeploy plus a full re-import, view rewrites, historical backfill, and SPICE refresh. Sequence these together to avoid multiple redeploys.
 
 ---
 
@@ -206,7 +210,7 @@ EventBridge (Mon 9 AM CT / daily Jira / monthly full sync)
 
 ### 4.4 Where the §2 fixes live in the new design
 
-The KPI computations move into `transform-and-snapshot`, computed from in-memory DataFrames rather than SQL. The **same corrected logic** must carry over: per-user A + B for NB Non-Productive, and the `project_type`-aware classifier for NB Productive. The brace issue disappears structurally — transforms flatten clean values from raw JSON, so no `REPLACE` layers are needed in the Athena views.
+The KPI computations move into `transform-and-snapshot`, computed from in-memory DataFrames rather than SQL. The **same corrected logic** must carry over: NB classification reads the two Clockify checkbox custom fields (`is_nb_productive` / `is_nb_non_productive`) flattened from raw JSON, plus the per-user capacity gap for NB Non-Productive. The `clockify-import` Lambda must send `hydrated=true` so the custom fields are present in the raw payload. The brace issue disappears structurally — transforms flatten clean values from raw JSON, so no `REPLACE` layers are needed in the Athena views.
 
 ---
 
@@ -216,14 +220,15 @@ The KPI computations move into `transform-and-snapshot`, computed from in-memory
 |------|---------|-------------------------------|
 | Compute | 1 monolith Lambda, 30 modes, 19 MB | Step Functions + 4 single-purpose Lambdas (~2 MB each) |
 | Read path | QuickSight → VPC → RDS (SSL off) | QuickSight → Athena → S3 (no VPC) |
-| NB Non-Productive | 0.00 (aggregate, wrong column) | Per-user A + B → 1,142 hrs (correct) |
-| NB Productive | ~802 hrs (raw billable=false) | ~77 hrs (project_type classifier) |
+| NB classification | Indirect `project_type` + `ps_project_mapping` heuristic (mis-computed both tiles) | Explicit Clockify checkbox fields `is_nb_productive` / `is_nb_non_productive` (migrations 105/106) |
+| NB Productive (wk 2026-08-10) | Wrong (swept in all `billable=false`) | ~557 hrs view / ~607 hrs snapshot (leadership); ~589 hrs (dev) |
+| NB Non-Productive (wk 2026-08-10) | 0.00 (aggregate, wrong column) | ~750 hrs view / ~875 hrs snapshot incl. capacity gap (leadership) |
 | Brace formatting | Braced values in base tables | Cleaned via Migration 107; structurally gone in new design |
 | Reliability | Single-AZ RDS, no DLQ, migration replay | Immutable S3, retries, SNS alerts, reprocessable |
 | Cost (pipeline) | ~$85/month | ~$2/month |
 
-**Sequencing recommendation:** land the three accuracy fixes (with one combined Lambda redeploy + backfill + SPICE refresh) and reconcile IaC drift *before* beginning the ingestion-pipeline migration, so the new pipeline inherits correct KPI logic and a clean IaC baseline.
+**Sequencing recommendation:** the NB custom-fields fix and brace cleanup have shipped (one combined Lambda redeploy + re-import + backfill + SPICE refresh). Reconcile IaC drift *before* beginning the ingestion-pipeline migration, so the new pipeline inherits the correct checkbox-based KPI logic and a clean IaC baseline.
 
 ---
 
-*Sources: `docs/ingestion-pipeline-spec.md`, `docs/nb-nonproductive-investigation-2026-07-07.md`, `docs/nb-nonproductive-full-audit-2026-07-07.md`, `docs/migration-107-strip-clockify-braces-impact.md`, `docs/current-state-assessment.md`, `docs/lambda-health-report.md`.*
+*Sources: `docs/ingestion-pipeline-spec.md`, `docs/nb-custom-fields-deployment-dev.md`, `docs/nb-custom-fields-deployment-leadership.md`, `docs/migration-107-strip-clockify-braces-impact.md`, `docs/current-state-assessment.md`, `docs/lambda-health-report.md`. Archived NB heuristic sources: `docs/nb-nonproductive-investigation-2026-07-07.md`, `docs/nb-nonproductive-full-audit-2026-07-07.md`.*

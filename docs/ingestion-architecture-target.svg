@@ -1,0 +1,239 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1560" height="1120" viewBox="0 0 1560 1120" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#4d4d4d"/>
+    </marker>
+    <marker id="arrowOpen" markerWidth="12" markerHeight="12" refX="9" refY="3.5" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L9,3.5 L0,7" fill="none" stroke="#8a6d3b" stroke-width="1"/>
+    </marker>
+    <style>
+      .grp { fill:none; stroke-width:2; rx:8; }
+      .grpLbl { font-size:14px; font-weight:700; }
+      .node { rx:8; ry:8; stroke-width:1.5; }
+      .nlbl { font-size:11px; fill:#111; text-anchor:middle; }
+      .nlbl b { font-weight:700; }
+      .edge { stroke:#4d4d4d; stroke-width:1.6; fill:none; marker-end:url(#arrow); }
+      .edgeDash { stroke:#8a6d3b; stroke-width:1.4; fill:none; stroke-dasharray:5 4; marker-end:url(#arrowOpen); }
+      .elbl { font-size:9.5px; fill:#333; text-anchor:middle; }
+      .title { font-size:18px; font-weight:700; text-anchor:middle; }
+      .aws-lambda { fill:#ED7100; }
+      .aws-eb { fill:#E7157B; }
+      .aws-sfn { fill:#CD2264; }
+      .aws-s3 { fill:#277116; }
+      .aws-glue { fill:#6610F2; }
+      .aws-athena { fill:#4B2AAD; }
+      .aws-qs { fill:#3334B9; }
+      .aws-rds { fill:#3334B9; }
+      .aws-sns { fill:#E7157B; }
+      .aws-secrets { fill:#C7131F; }
+      .ext { fill:#4d4d4d; }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1560" height="1120" fill="#ffffff"/>
+  <text x="780" y="34" class="title">Weekly Reporting — Target Ingestion Architecture (Account 961341524729 · us-east-1)</text>
+
+  <!-- ===== External Sources group ===== -->
+  <rect x="30" y="60" width="230" height="210" class="grp" stroke="#D79B00" rx="8"/>
+  <text x="45" y="80" class="grpLbl" fill="#D79B00">External Data Sources</text>
+  <!-- Clockify -->
+  <rect x="70" y="95" width="150" height="60" class="node" fill="#FCE4EC" stroke="#E7157B"/>
+  <rect x="70" y="95" width="34" height="60" fill="#E7157B" rx="8"/>
+  <text x="87" y="130" fill="#fff" font-size="16" font-weight="700" text-anchor="middle">C</text>
+  <text x="162" y="118" class="nlbl"><tspan font-weight="700">Clockify API</tspan></text>
+  <text x="162" y="132" class="nlbl">users · projects · entries</text>
+  <text x="162" y="145" class="nlbl">(hydrated=true)</text>
+  <!-- Jira -->
+  <rect x="70" y="185" width="150" height="60" class="node" fill="#E3F0FF" stroke="#2684FF"/>
+  <rect x="70" y="185" width="34" height="60" fill="#2684FF" rx="8"/>
+  <text x="87" y="220" fill="#fff" font-size="16" font-weight="700" text-anchor="middle">J</text>
+  <text x="162" y="208" class="nlbl"><tspan font-weight="700">Jira Cloud API</tspan></text>
+  <text x="162" y="222" class="nlbl">PS/MC/ESC issues</text>
+  <text x="162" y="235" class="nlbl">+ custom fields</text>
+
+  <!-- ===== Triggers group ===== -->
+  <rect x="30" y="290" width="230" height="270" class="grp" stroke="#6C8EBF" rx="8"/>
+  <text x="45" y="310" class="grpLbl" fill="#6C8EBF">Event Triggers (EventBridge)</text>
+  <g>
+    <rect x="70" y="320" width="150" height="58" class="node aws-eb" stroke="#a00d54"/>
+    <text x="145" y="342" class="nlbl" fill="#fff"><tspan font-weight="700">EventBridge</tspan></text>
+    <text x="145" y="356" class="nlbl" fill="#fff">Mon 9AM CT (weekly)</text>
+    <text x="145" y="369" class="nlbl" fill="#fff">mode=incremental</text>
+  </g>
+  <g>
+    <rect x="70" y="390" width="150" height="58" class="node aws-eb" stroke="#a00d54"/>
+    <text x="145" y="412" class="nlbl" fill="#fff"><tspan font-weight="700">EventBridge</tspan></text>
+    <text x="145" y="426" class="nlbl" fill="#fff">Daily 10AM UTC</text>
+    <text x="145" y="439" class="nlbl" fill="#fff">(jira only)</text>
+  </g>
+  <g>
+    <rect x="70" y="460" width="150" height="58" class="node aws-eb" stroke="#a00d54"/>
+    <text x="145" y="482" class="nlbl" fill="#fff"><tspan font-weight="700">EventBridge</tspan></text>
+    <text x="145" y="496" class="nlbl" fill="#fff">Monthly full sync</text>
+    <text x="145" y="509" class="nlbl" fill="#fff">mode=full · 12wk</text>
+  </g>
+
+  <!-- ===== Secrets Manager ===== -->
+  <rect x="70" y="585" width="150" height="58" class="node aws-secrets" stroke="#8a0d15"/>
+  <text x="145" y="608" class="nlbl" fill="#fff"><tspan font-weight="700">Secrets Manager</tspan></text>
+  <text x="145" y="622" class="nlbl" fill="#fff">production/weekly-</text>
+  <text x="145" y="635" class="nlbl" fill="#fff">reporting/clockify</text>
+
+  <!-- ===== Step Functions group ===== -->
+  <rect x="310" y="60" width="640" height="560" class="grp" stroke="#82B366" rx="8"/>
+  <text x="325" y="80" class="grpLbl" fill="#82B366">Step Functions: WeeklyIngestionPipeline</text>
+
+  <!-- Parallel -->
+  <polygon points="410,150 470,120 530,150 470,180" fill="#dae8fc" stroke="#6c8ebf" stroke-width="1.5"/>
+  <text x="470" y="147" class="nlbl">Parallel:</text>
+  <text x="470" y="160" class="nlbl">ExtractData</text>
+
+  <!-- clockify-import -->
+  <rect x="560" y="110" width="170" height="62" class="node aws-lambda" stroke="#a85200"/>
+  <text x="645" y="132" class="nlbl" fill="#fff"><tspan font-weight="700">clockify-import</tspan></text>
+  <text x="645" y="146" class="nlbl" fill="#fff">512MB · arm64 · 5min</text>
+  <text x="645" y="159" class="nlbl" fill="#fff">No VPC</text>
+  <!-- jira-import -->
+  <rect x="560" y="220" width="170" height="62" class="node aws-lambda" stroke="#a85200"/>
+  <text x="645" y="242" class="nlbl" fill="#fff"><tspan font-weight="700">jira-import</tspan></text>
+  <text x="645" y="256" class="nlbl" fill="#fff">256MB · arm64 · 3min</text>
+  <text x="645" y="269" class="nlbl" fill="#fff">No VPC</text>
+
+  <!-- Choice -->
+  <polygon points="770,165 840,135 910,165 840,195" fill="#dae8fc" stroke="#6c8ebf" stroke-width="1.5"/>
+  <text x="840" y="162" class="nlbl">CheckExtraction</text>
+  <text x="840" y="175" class="nlbl">Results</text>
+
+  <!-- transform -->
+  <rect x="560" y="360" width="180" height="72" class="node aws-lambda" stroke="#a85200"/>
+  <text x="650" y="382" class="nlbl" fill="#fff"><tspan font-weight="700">transform-and-snapshot</tspan></text>
+  <text x="650" y="396" class="nlbl" fill="#fff">1024MB · arm64 · 5min</text>
+  <text x="650" y="409" class="nlbl" fill="#fff">VPC (transition only)</text>
+  <text x="650" y="422" class="nlbl" fill="#fff">pandas + pyarrow</text>
+
+  <!-- quicksight-refresh -->
+  <rect x="770" y="360" width="160" height="72" class="node aws-lambda" stroke="#a85200"/>
+  <text x="850" y="386" class="nlbl" fill="#fff"><tspan font-weight="700">quicksight-refresh</tspan></text>
+  <text x="850" y="400" class="nlbl" fill="#fff">128MB · arm64 · 60s</text>
+  <text x="850" y="413" class="nlbl" fill="#fff">No VPC</text>
+
+  <!-- RDS (transition) -->
+  <rect x="770" y="470" width="160" height="66" class="node" fill="#3334B9" stroke="#22237a" stroke-dasharray="6 4"/>
+  <text x="850" y="492" class="nlbl" fill="#fff"><tspan font-weight="700">RDS PostgreSQL</tspan></text>
+  <text x="850" y="506" class="nlbl" fill="#fff">transition write-back</text>
+  <text x="850" y="519" class="nlbl" fill="#fff">only (decommissioned)</text>
+
+  <!-- SNS -->
+  <rect x="560" y="480" width="170" height="62" class="node aws-sns" stroke="#a00d54"/>
+  <text x="645" y="502" class="nlbl" fill="#fff"><tspan font-weight="700">SNS notifications</tspan></text>
+  <text x="645" y="516" class="nlbl" fill="#fff">weekly-reporting</text>
+  <text x="645" y="529" class="nlbl" fill="#fff">success/partial/failure</text>
+
+  <!-- ===== S3 Data Lake group ===== -->
+  <rect x="1000" y="60" width="270" height="350" class="grp" stroke="#9673A6" rx="8"/>
+  <text x="1015" y="80" class="grpLbl" fill="#9673A6">S3 Data Lake — s3://cdx-reporting-{env}/</text>
+  <g>
+    <rect x="1030" y="95" width="210" height="70" class="node aws-s3" stroke="#1a4d0f"/>
+    <text x="1135" y="117" class="nlbl" fill="#fff"><tspan font-weight="700">raw/  (immutable JSON)</tspan></text>
+    <text x="1135" y="131" class="nlbl" fill="#fff">date-partitioned · versioned</text>
+    <text x="1135" y="144" class="nlbl" fill="#fff">clockify/* · jira/issues</text>
+    <text x="1135" y="157" class="nlbl" fill="#fff">IA@30d · Glacier@90d</text>
+  </g>
+  <g>
+    <rect x="1030" y="185" width="210" height="70" class="node aws-s3" stroke="#1a4d0f"/>
+    <text x="1135" y="207" class="nlbl" fill="#fff"><tspan font-weight="700">curated/  (Parquet)</tspan></text>
+    <text x="1135" y="221" class="nlbl" fill="#fff">Hive-partitioned</text>
+    <text x="1135" y="234" class="nlbl" fill="#fff">time_entries · users · projects</text>
+    <text x="1135" y="247" class="nlbl" fill="#fff">jira_projects · kpi_snapshots</text>
+  </g>
+  <g>
+    <rect x="1030" y="285" width="210" height="55" class="node aws-s3" stroke="#1a4d0f"/>
+    <text x="1135" y="309" class="nlbl" fill="#fff"><tspan font-weight="700">athena-results/</tspan></text>
+    <text x="1135" y="323" class="nlbl" fill="#fff">7-day lifecycle</text>
+  </g>
+
+  <!-- ===== Query Layer group ===== -->
+  <rect x="1000" y="430" width="270" height="210" class="grp" stroke="#6C8EBF" rx="8"/>
+  <text x="1015" y="450" class="grpLbl" fill="#6C8EBF">Query Layer</text>
+  <g>
+    <rect x="1030" y="460" width="210" height="62" class="node aws-glue" stroke="#3d0a91"/>
+    <text x="1135" y="482" class="nlbl" fill="#fff"><tspan font-weight="700">Glue Data Catalog</tspan></text>
+    <text x="1135" y="496" class="nlbl" fill="#fff">database: cdx_reporting</text>
+    <text x="1135" y="509" class="nlbl" fill="#fff">Crawler: Mon +30min</text>
+  </g>
+  <g>
+    <rect x="1030" y="540" width="210" height="72" class="node aws-athena" stroke="#2c1866"/>
+    <text x="1135" y="562" class="nlbl" fill="#fff"><tspan font-weight="700">Athena (serverless SQL)</tspan></text>
+    <text x="1135" y="576" class="nlbl" fill="#fff">vw_weekly_time_summary</text>
+    <text x="1135" y="589" class="nlbl" fill="#fff">vw_resource_utilization</text>
+    <text x="1135" y="602" class="nlbl" fill="#fff">vw_project_health</text>
+  </g>
+
+  <!-- ===== QuickSight ===== -->
+  <rect x="1330" y="500" width="200" height="82" class="node aws-qs" stroke="#22237a"/>
+  <text x="1430" y="524" class="nlbl" fill="#fff"><tspan font-weight="700">QuickSight</tspan></text>
+  <text x="1430" y="538" class="nlbl" fill="#fff">Athena source · No VPC</text>
+  <text x="1430" y="551" class="nlbl" fill="#fff">~12 SPICE datasets</text>
+  <text x="1430" y="564" class="nlbl" fill="#fff">3 dashboards: Executive ·</text>
+  <text x="1430" y="577" class="nlbl" fill="#fff">COO Operational · Detailed</text>
+
+  <!-- ===== Edges ===== -->
+  <!-- sources to lambdas -->
+  <path class="edge" d="M220,125 C 420,125 380,140 558,140"/>
+  <path class="edge" d="M220,215 C 420,215 380,250 558,250"/>
+  <!-- triggers -->
+  <path class="edge" d="M220,349 C 320,349 360,160 408,158"/>
+  <path class="edgeDash" d="M220,419 C 400,419 420,255 558,252"/>
+  <path class="edge" d="M220,489 C 330,489 370,168 408,166"/>
+  <!-- parallel to lambdas -->
+  <path class="edge" d="M530,148 L558,142"/>
+  <path class="edge" d="M530,162 C 545,200 545,240 558,250"/>
+  <!-- lambdas to choice -->
+  <path class="edge" d="M730,141 C 755,150 760,160 772,166"/>
+  <path class="edge" d="M730,251 C 760,240 760,190 778,184"/>
+  <!-- choice to transform -->
+  <path class="edge" d="M840,195 C 840,300 720,310 650,358"/>
+  <text x="770" y="300" class="elbl">both OK</text>
+  <!-- transform to quicksight-refresh -->
+  <path class="edge" d="M740,396 L768,396"/>
+  <text x="754" y="390" class="elbl">ok</text>
+  <!-- secrets dashed to lambdas -->
+  <path class="edgeDash" d="M220,610 C 400,610 480,150 558,148"/>
+  <text x="360" y="605" class="elbl">GetSecretValue</text>
+  <path class="edgeDash" d="M220,620 C 400,620 470,258 558,258"/>
+  <path class="edgeDash" d="M220,630 C 420,630 480,395 558,395"/>
+  <!-- lambdas to S3 raw -->
+  <path class="edge" d="M730,130 C 880,120 950,120 1028,125"/>
+  <text x="880" y="115" class="elbl">PutObject</text>
+  <path class="edge" d="M730,240 C 900,150 950,140 1028,140"/>
+  <text x="905" y="150" class="elbl">PutObject</text>
+  <!-- transform reads raw / writes curated -->
+  <path class="edge" d="M740,375 C 900,300 950,180 1028,150"/>
+  <text x="905" y="270" class="elbl">GetObject (raw)</text>
+  <path class="edge" d="M740,400 C 920,360 960,230 1028,225"/>
+  <text x="915" y="360" class="elbl">PutObject (curated)</text>
+  <!-- transform write-back RDS -->
+  <path class="edgeDash" d="M740,415 C 758,440 762,455 780,470"/>
+  <text x="800" y="452" class="elbl">write-back</text>
+  <!-- quicksight-refresh to QuickSight -->
+  <path class="edge" d="M930,400 C 1150,410 1250,480 1330,520"/>
+  <text x="1150" y="430" class="elbl">CreateIngestion</text>
+  <!-- quicksight-refresh to SNS -->
+  <path class="edge" d="M770,420 C 740,450 700,465 690,478"/>
+  <!-- curated to glue -->
+  <path class="edge" d="M1135,255 L1135,458"/>
+  <!-- glue to athena -->
+  <path class="edge" d="M1135,522 L1135,538"/>
+  <!-- athena to athena-results -->
+  <path class="edge" d="M1130,540 C 1100,420 1110,360 1120,342"/>
+  <text x="1080" y="430" class="elbl">query results</text>
+  <!-- athena to quicksight -->
+  <path class="edge" d="M1240,570 C 1290,565 1300,545 1328,545"/>
+
+  <!-- Legend -->
+  <rect x="310" y="650" width="960" height="34" fill="#f5f5f5" stroke="#cccccc"/>
+  <text x="325" y="672" font-size="12" fill="#333">Legend:  <tspan font-weight="700">solid</tspan> = data / control flow    ·    <tspan font-weight="700" fill="#8a6d3b">dashed</tspan> = IAM / secrets / transition-only    ·    RDS (dashed) removed after Phase 4 cutover</text>
+
+  <!-- footnote -->
+  <text x="325" y="710" font-size="11" fill="#666">Note: only transform-and-snapshot uses a VPC, and only during transition for RDS KPI write-back. After cutover, no Lambda needs a VPC and the QuickSight read path has no VPC dependency.</text>
+</svg>

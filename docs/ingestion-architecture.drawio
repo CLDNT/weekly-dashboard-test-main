@@ -1,0 +1,220 @@
+<mxfile host="app.diagrams.net" agent="Kiro" version="24.0.0">
+  <diagram id="target-arch" name="Target Architecture">
+    <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title -->
+        <mxCell id="title" value="Weekly Reporting — Target Ingestion Architecture (Account 961341524729 · us-east-1)" style="text;html=1;fontSize=16;fontStyle=1;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1520" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- ===== External Sources ===== -->
+        <mxCell id="grpExt" value="External Data Sources" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#D79B00;verticalAlign=top;fontStyle=1;fontColor=#D79B00;" vertex="1" parent="1">
+          <mxGeometry x="40" y="70" width="220" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="clockify" value="Clockify API&#10;(users, projects, entries&#10;hydrated=true)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#E7157B;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.marketplace;" vertex="1" parent="1">
+          <mxGeometry x="80" y="105" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="jira" value="Jira Cloud API&#10;(PS/MC/ESC issues&#10;+ custom fields)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#2684FF;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.marketplace;" vertex="1" parent="1">
+          <mxGeometry x="80" y="190" width="60" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ===== Triggers ===== -->
+        <mxCell id="grpTrig" value="Event Triggers" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#6C8EBF;verticalAlign=top;fontStyle=1;fontColor=#6C8EBF;" vertex="1" parent="1">
+          <mxGeometry x="40" y="300" width="220" height="280" as="geometry" />
+        </mxCell>
+        <mxCell id="eb1" value="EventBridge&#10;Mon 9AM CT (weekly)&#10;mode=incremental" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=#F34482;gradientDirection=north;fillColor=#BC1356;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.eventbridge;" vertex="1" parent="1">
+          <mxGeometry x="80" y="330" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="eb2" value="EventBridge&#10;Daily 10AM UTC&#10;(jira only)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=#F34482;gradientDirection=north;fillColor=#BC1356;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.eventbridge;" vertex="1" parent="1">
+          <mxGeometry x="80" y="415" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="eb3" value="EventBridge&#10;Monthly full sync&#10;mode=full, 12wk" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=#F34482;gradientDirection=north;fillColor=#BC1356;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.eventbridge;" vertex="1" parent="1">
+          <mxGeometry x="80" y="500" width="60" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ===== Secrets Manager ===== -->
+        <mxCell id="secrets" value="Secrets Manager&#10;production/weekly-reporting/clockify" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=#F54749;gradientDirection=north;fillColor=#C7131F;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.secrets_manager;" vertex="1" parent="1">
+          <mxGeometry x="80" y="610" width="60" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ===== Step Functions group ===== -->
+        <mxCell id="grpSfn" value="Step Functions: WeeklyIngestionPipeline" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#82B366;verticalAlign=top;fontStyle=1;fontColor=#82B366;" vertex="1" parent="1">
+          <mxGeometry x="320" y="70" width="620" height="510" as="geometry" />
+        </mxCell>
+        <mxCell id="sfnIcon" value="Step Functions" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=#F34482;gradientDirection=north;fillColor=#BC1356;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.step_functions;" vertex="1" parent="1">
+          <mxGeometry x="820" y="95" width="50" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="parallel" value="Parallel: ExtractData" style="rhombus;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="360" y="150" width="120" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="lambdaClk" value="clockify-import&#10;512MB · arm64 · 5min&#10;No VPC" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=#F78E04;gradientDirection=north;fillColor=#D05C17;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.lambda;" vertex="1" parent="1">
+          <mxGeometry x="530" y="120" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="lambdaJira" value="jira-import&#10;256MB · arm64 · 3min&#10;No VPC" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=#F78E04;gradientDirection=north;fillColor=#D05C17;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.lambda;" vertex="1" parent="1">
+          <mxGeometry x="530" y="230" width="60" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="choice" value="CheckExtraction&#10;Results" style="rhombus;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="650" y="170" width="110" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="lambdaTrf" value="transform-and-snapshot&#10;1024MB · arm64 · 5min&#10;VPC (transition only)&#10;pandas + pyarrow" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=#F78E04;gradientDirection=north;fillColor=#D05C17;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.lambda;" vertex="1" parent="1">
+          <mxGeometry x="530" y="360" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="lambdaQs" value="quicksight-refresh&#10;128MB · arm64 · 60s&#10;No VPC" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=#F78E04;gradientDirection=north;fillColor=#D05C17;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.lambda;" vertex="1" parent="1">
+          <mxGeometry x="760" y="360" width="60" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="sns" value="SNS&#10;weekly-reporting-notifications&#10;(success/partial/failure)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=#F34482;gradientDirection=north;fillColor=#BC1356;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.simple_notification_service;" vertex="1" parent="1">
+          <mxGeometry x="530" y="480" width="60" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ===== S3 Data Lake ===== -->
+        <mxCell id="grpLake" value="S3 Data Lake — s3://cdx-reporting-{env}/" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#9673A6;verticalAlign=top;fontStyle=1;fontColor=#9673A6;" vertex="1" parent="1">
+          <mxGeometry x="1000" y="70" width="260" height="330" as="geometry" />
+        </mxCell>
+        <mxCell id="s3raw" value="raw/&#10;immutable JSON&#10;date-partitioned · versioned&#10;IA@30d · Glacier@90d" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#277116;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.s3;" vertex="1" parent="1">
+          <mxGeometry x="1050" y="110" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="s3cur" value="curated/&#10;Parquet · Hive-partitioned&#10;time_entries, users, projects,&#10;jira_projects, kpi_snapshots" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#277116;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.s3;" vertex="1" parent="1">
+          <mxGeometry x="1050" y="215" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="s3ath" value="athena-results/&#10;7-day lifecycle" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#277116;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.s3;" vertex="1" parent="1">
+          <mxGeometry x="1050" y="320" width="60" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ===== Query Layer ===== -->
+        <mxCell id="grpQuery" value="Query Layer" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#6C8EBF;verticalAlign=top;fontStyle=1;fontColor=#6C8EBF;" vertex="1" parent="1">
+          <mxGeometry x="1000" y="430" width="260" height="220" as="geometry" />
+        </mxCell>
+        <mxCell id="glue" value="Glue Data Catalog&#10;database: cdx_reporting&#10;Crawler: Mon 30 min post-run" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=#4D72F3;gradientDirection=north;fillColor=#3334B9;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.glue;" vertex="1" parent="1">
+          <mxGeometry x="1050" y="465" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="athena" value="Athena (serverless SQL)&#10;vw_weekly_time_summary,&#10;vw_resource_utilization,&#10;vw_project_health" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=#4D72F3;gradientDirection=north;fillColor=#3334B9;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.athena;" vertex="1" parent="1">
+          <mxGeometry x="1050" y="570" width="60" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ===== QuickSight ===== -->
+        <mxCell id="quicksight" value="QuickSight (Athena source · No VPC)&#10;~12 SPICE datasets → 3 dashboards&#10;Executive · COO Operational · Detailed" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=#4D72F3;gradientDirection=north;fillColor=#3334B9;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.quicksight;" vertex="1" parent="1">
+          <mxGeometry x="1330" y="500" width="60" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ===== RDS transition ===== -->
+        <mxCell id="rds" value="RDS PostgreSQL&#10;(transition write-back only,&#10;decommissioned after cutover)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=#4D72F3;gradientDirection=north;fillColor=#3334B9;strokeColor=none;dashed=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.rds;" vertex="1" parent="1">
+          <mxGeometry x="760" y="470" width="60" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ===== Edges ===== -->
+        <mxCell id="e1" style="endArrow=classic;html=1;" edge="1" parent="1" source="clockify" target="lambdaClk"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e2" style="endArrow=classic;html=1;" edge="1" parent="1" source="jira" target="lambdaJira"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e3" style="endArrow=classic;html=1;" edge="1" parent="1" source="eb1" target="parallel"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e4" style="endArrow=classic;html=1;dashed=1;" edge="1" parent="1" source="eb2" target="lambdaJira"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e5" style="endArrow=classic;html=1;" edge="1" parent="1" source="eb3" target="parallel"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e6" style="endArrow=classic;html=1;" edge="1" parent="1" source="parallel" target="lambdaClk"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e7" style="endArrow=classic;html=1;" edge="1" parent="1" source="parallel" target="lambdaJira"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e8" style="endArrow=classic;html=1;" edge="1" parent="1" source="lambdaClk" target="choice"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e9" style="endArrow=classic;html=1;" edge="1" parent="1" source="lambdaJira" target="choice"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e10" value="both OK" style="endArrow=classic;html=1;" edge="1" parent="1" source="choice" target="lambdaTrf"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e11" value="ok" style="endArrow=classic;html=1;" edge="1" parent="1" source="lambdaTrf" target="lambdaQs"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e12" value="GetSecretValue" style="endArrow=open;html=1;dashed=1;fontSize=9;" edge="1" parent="1" source="secrets" target="lambdaClk"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e13" style="endArrow=open;html=1;dashed=1;" edge="1" parent="1" source="secrets" target="lambdaJira"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e14" style="endArrow=open;html=1;dashed=1;" edge="1" parent="1" source="secrets" target="lambdaTrf"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <mxCell id="e15" value="PutObject" style="endArrow=classic;html=1;fontSize=9;" edge="1" parent="1" source="lambdaClk" target="s3raw"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e16" value="PutObject" style="endArrow=classic;html=1;fontSize=9;" edge="1" parent="1" source="lambdaJira" target="s3raw"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e17" value="GetObject" style="endArrow=classic;html=1;fontSize=9;" edge="1" parent="1" source="lambdaTrf" target="s3raw"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e18" value="PutObject" style="endArrow=classic;html=1;fontSize=9;" edge="1" parent="1" source="lambdaTrf" target="s3cur"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e19" value="write-back" style="endArrow=classic;html=1;dashed=1;fontSize=9;" edge="1" parent="1" source="lambdaTrf" target="rds"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e20" value="CreateIngestion" style="endArrow=classic;html=1;fontSize=9;" edge="1" parent="1" source="lambdaQs" target="quicksight"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <mxCell id="e21" style="endArrow=classic;html=1;" edge="1" parent="1" source="lambdaQs" target="sns"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e22" style="endArrow=classic;html=1;" edge="1" parent="1" source="s3cur" target="glue"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e23" style="endArrow=classic;html=1;" edge="1" parent="1" source="glue" target="athena"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e24" value="query results" style="endArrow=classic;html=1;fontSize=9;" edge="1" parent="1" source="athena" target="s3ath"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e25" style="endArrow=classic;html=1;" edge="1" parent="1" source="athena" target="quicksight"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- Legend -->
+        <mxCell id="legend" value="Legend:  solid = data/control flow   ·   dashed = IAM/secrets/transition-only   ·   RDS (dashed) removed after Phase 4 cutover" style="text;html=1;fontSize=11;align=left;verticalAlign=middle;fillColor=#f5f5f5;strokeColor=#cccccc;" vertex="1" parent="1">
+          <mxGeometry x="320" y="600" width="940" height="30" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <diagram id="current-vs-target" name="Current vs Target">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="t2" value="Current (Monolith) vs Target (Pipeline)" style="text;html=1;fontSize=16;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1320" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- CURRENT -->
+        <mxCell id="grpCur" value="CURRENT — to be decommissioned" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FBE5E5;strokeColor=#B85450;verticalAlign=top;fontStyle=1;fontColor=#B85450;" vertex="1" parent="1">
+          <mxGeometry x="40" y="70" width="620" height="600" as="geometry" />
+        </mxCell>
+        <mxCell id="cClk" value="Clockify API" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#E7157B;strokeColor=none;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.marketplace;" vertex="1" parent="1">
+          <mxGeometry x="90" y="120" width="50" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="cJira" value="Jira Cloud" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#2684FF;strokeColor=none;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.marketplace;" vertex="1" parent="1">
+          <mxGeometry x="90" y="220" width="50" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="mono" value="production-clockify-import&#10;2,034 lines · 30 modes · 19MB · VPC" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=#F78E04;gradientDirection=north;fillColor=#D05C17;strokeColor=none;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.lambda;" vertex="1" parent="1">
+          <mxGeometry x="290" y="160" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="mrds" value="RDS PostgreSQL&#10;single-AZ · 50+ SQL views&#10;kpi_weekly_snapshots" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=#4D72F3;gradientDirection=north;fillColor=#3334B9;strokeColor=none;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.rds;" vertex="1" parent="1">
+          <mxGeometry x="290" y="330" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="mqs" value="QuickSight&#10;47 SPICE datasets&#10;VPC data source (SSL off)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=#4D72F3;gradientDirection=north;fillColor=#3334B9;strokeColor=none;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.quicksight;" vertex="1" parent="1">
+          <mxGeometry x="290" y="490" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="ce1" style="endArrow=classic;html=1;" edge="1" parent="1" source="cClk" target="mono"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ce2" style="endArrow=classic;html=1;" edge="1" parent="1" source="cJira" target="mono"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ce3" value="writes" style="endArrow=classic;html=1;fontSize=9;" edge="1" parent="1" source="mono" target="mrds"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ce4" value="VPC · SSL off" style="endArrow=classic;html=1;fontSize=9;" edge="1" parent="1" source="mrds" target="mqs"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- TARGET -->
+        <mxCell id="grpTgt" value="TARGET — Ingestion Pipeline" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#E8F5E4;strokeColor=#82B366;verticalAlign=top;fontStyle=1;fontColor=#82B366;" vertex="1" parent="1">
+          <mxGeometry x="720" y="70" width="640" height="600" as="geometry" />
+        </mxCell>
+        <mxCell id="tClk" value="Clockify API" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#E7157B;strokeColor=none;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.marketplace;" vertex="1" parent="1">
+          <mxGeometry x="770" y="120" width="50" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="tJira" value="Jira Cloud" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#2684FF;strokeColor=none;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.marketplace;" vertex="1" parent="1">
+          <mxGeometry x="770" y="220" width="50" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="tsfn" value="Step Functions&#10;4 single-purpose Lambdas&#10;(~2MB each)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=#F34482;gradientDirection=north;fillColor=#BC1356;strokeColor=none;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.step_functions;" vertex="1" parent="1">
+          <mxGeometry x="970" y="160" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="ts3" value="S3 Data Lake&#10;raw + curated (Parquet)&#10;immutable · reprocessable" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#277116;strokeColor=none;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.s3;" vertex="1" parent="1">
+          <mxGeometry x="970" y="310" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="tga" value="Glue + Athena&#10;(no VPC)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=#4D72F3;gradientDirection=north;fillColor=#3334B9;strokeColor=none;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.athena;" vertex="1" parent="1">
+          <mxGeometry x="970" y="450" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="tqs" value="QuickSight&#10;~12 SPICE datasets&#10;Athena source · no VPC" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=#4D72F3;gradientDirection=north;fillColor=#3334B9;strokeColor=none;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.quicksight;" vertex="1" parent="1">
+          <mxGeometry x="1180" y="450" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="te1" style="endArrow=classic;html=1;" edge="1" parent="1" source="tClk" target="tsfn"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="te2" style="endArrow=classic;html=1;" edge="1" parent="1" source="tJira" target="tsfn"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="te3" style="endArrow=classic;html=1;" edge="1" parent="1" source="tsfn" target="ts3"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="te4" style="endArrow=classic;html=1;" edge="1" parent="1" source="ts3" target="tga"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="te5" style="endArrow=classic;html=1;" edge="1" parent="1" source="tga" target="tqs"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- Migration arrow -->
+        <mxCell id="mig" value="Phase 1 parallel write → Phase 2 Athena layer → Phase 3 QuickSight cutover → Phase 4 decommission (RDS kept 2 wks)" style="endArrow=classic;html=1;strokeWidth=2;strokeColor=#6c8ebf;fontSize=11;fontStyle=1;" edge="1" parent="1" source="grpCur" target="grpTgt">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="660" y="680" as="sourcePoint" />
+            <mxPoint x="720" y="680" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
