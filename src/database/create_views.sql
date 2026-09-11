@@ -2382,22 +2382,8 @@ time_classified AS (
             WHEN te.billable = TRUE                                                              THEN te.duration_hours
             ELSE 0
         END)                                                                                     AS billable_hours,
-        SUM(CASE
-            WHEN te.billable = FALSE
-             AND (   cp.project_type IN ('Non Bill Productive', 'Overtime', 'Presales')
-                  OR (cp.project_type IS NULL     AND mc.client_lower IS NOT NULL)
-                  OR (cp.project_type NOT IN ('Non Bill Productive','Non Bill Non Productive','Overtime','Presales')
-                      AND cp.project_type IS NOT NULL AND mc.client_lower IS NOT NULL))
-            THEN te.duration_hours ELSE 0
-        END)                                                                                     AS nb_productive_hours,
-        SUM(CASE
-            WHEN te.billable = FALSE
-             AND NOT (   cp.project_type IN ('Non Bill Productive', 'Overtime', 'Presales')
-                      OR (cp.project_type IS NULL AND mc.client_lower IS NOT NULL)
-                      OR (cp.project_type NOT IN ('Non Bill Productive','Non Bill Non Productive','Overtime','Presales')
-                          AND cp.project_type IS NOT NULL AND mc.client_lower IS NOT NULL))
-            THEN te.duration_hours ELSE 0
-        END)                                                                                     AS nb_non_productive_hours,
+        SUM(CASE WHEN te.is_nb_productive     = TRUE THEN te.duration_hours ELSE 0 END)          AS nb_productive_hours,
+        SUM(CASE WHEN te.is_nb_non_productive = TRUE THEN te.duration_hours ELSE 0 END)          AS nb_non_productive_hours,
         SUM(te.duration_hours)                                                                   AS total_logged_hours
     FROM clockify_detailed_time_entries te
     LEFT JOIN clockify_projects cp
@@ -3187,8 +3173,9 @@ active_users AS (
         u.name,
         u.daily_capacity,
         u.daily_capacity * 5 AS weekly_capacity,
-        cleaned.practice_alignment,
-        COALESCE(m.line_of_business, 'Internal') AS line_of_business
+        COALESCE(NULLIF(cleaned.practice_alignment, ''), 'Not Assigned') AS practice_alignment,
+        COALESCE(m.line_of_business, 'Internal') AS line_of_business,
+        u.created_at::DATE AS user_created_date
     FROM clockify_users u
     CROSS JOIN LATERAL (
         SELECT TRIM(REPLACE(REPLACE(REPLACE(REPLACE(
@@ -3196,12 +3183,12 @@ active_users AS (
             '{',''),'}',''),'"',''),chr(39),'')) AS practice_alignment
     ) cleaned
     LEFT JOIN lob_practice_mapping m
-        ON m.practice_alignment = cleaned.practice_alignment
+        ON m.practice_alignment = COALESCE(NULLIF(cleaned.practice_alignment, ''), 'Not Assigned')
     WHERE u.status = 'active'
       AND u.daily_capacity > 0
       AND NOT COALESCE(u.reporting_excluded, FALSE)
       AND (u.time_submission IS NULL OR UPPER(TRIM(u.time_submission)) != 'NO')
-      AND cleaned.practice_alignment != ''
+      AND (u.pod_assignment IS NULL OR u.pod_assignment NOT ILIKE '%exempt%')
 ),
 -- Weekly hours per user with CORRECT NB classification (matching vw_productive_utilization)
 weekly_hours AS (
@@ -3211,30 +3198,10 @@ weekly_hours AS (
         SUM(te.duration_hours)                         AS hours_logged,
         SUM(CASE WHEN te.billable THEN te.duration_hours
                  ELSE 0 END)                           AS billable_hours,
-        -- NB Productive: uses mapped_clients fallback (consistent with vw_productive_utilization)
-        SUM(CASE
-                WHEN te.billable = FALSE
-                 AND (
-                     cp.project_type IN ('Non Bill Productive', 'Overtime', 'Presales')
-                     OR (cp.project_type IS NULL AND mc.client_lower IS NOT NULL)
-                     OR (cp.project_type NOT IN ('Non Bill Productive','Non Bill Non Productive','Overtime','Presales')
-                         AND cp.project_type IS NOT NULL AND mc.client_lower IS NOT NULL)
-                 )
-                THEN te.duration_hours
-                ELSE 0
-            END)                                       AS productive_nb_hours,
-        -- NB Non-Productive: inverse of above (consistent with vw_productive_utilization)
-        SUM(CASE
-                WHEN te.billable = FALSE
-                 AND NOT (
-                     cp.project_type IN ('Non Bill Productive', 'Overtime', 'Presales')
-                     OR (cp.project_type IS NULL AND mc.client_lower IS NOT NULL)
-                     OR (cp.project_type NOT IN ('Non Bill Productive','Non Bill Non Productive','Overtime','Presales')
-                         AND cp.project_type IS NOT NULL AND mc.client_lower IS NOT NULL)
-                 )
-                THEN te.duration_hours
-                ELSE 0
-            END)                                       AS nb_non_productive_hours
+        -- NB Productive: custom-field-only (project "Non Bill Productive" checkbox)
+        SUM(CASE WHEN te.is_nb_productive = TRUE THEN te.duration_hours ELSE 0 END) AS productive_nb_hours,
+        -- NB Non-Productive: custom-field-only (project "Non Bill Non Productive" checkbox)
+        SUM(CASE WHEN te.is_nb_non_productive = TRUE THEN te.duration_hours ELSE 0 END) AS nb_non_productive_hours
     FROM clockify_detailed_time_entries te
     LEFT JOIN clockify_projects cp
         ON te.clockify_project_id = cp.clockify_project_id
@@ -3266,9 +3233,9 @@ SELECT
     ROUND(
         (COALESCE(SUM(h.hours_logged), 0) / NULLIF(SUM(u.weekly_capacity), 0) * 100)::NUMERIC, 1
     ) AS total_util_pct,
-    COUNT(DISTINCT CASE WHEN h.hours_logged >= u.weekly_capacity * 0.9 THEN u.clockify_user_id END) AS compliant_count,
+    COUNT(DISTINCT CASE WHEN h.hours_logged > 0 THEN u.clockify_user_id END) AS compliant_count,
     ROUND(
-        (COUNT(DISTINCT CASE WHEN h.hours_logged >= u.weekly_capacity * 0.9 THEN u.clockify_user_id END)::NUMERIC /
+        (COUNT(DISTINCT CASE WHEN h.hours_logged > 0 THEN u.clockify_user_id END)::NUMERIC /
          NULLIF(COUNT(DISTINCT u.clockify_user_id), 0) * 100), 1
     ) AS compliance_pct
 FROM active_users u
@@ -3276,10 +3243,12 @@ CROSS JOIN (
     SELECT DISTINCT DATE_TRUNC('week', entry_date)::DATE AS week_start
     FROM clockify_detailed_time_entries
     WHERE entry_date >= DATE_TRUNC('week', CURRENT_DATE)::DATE - INTERVAL '52 weeks'
+      AND DATE_TRUNC('week', entry_date)::DATE < DATE_TRUNC('week', CURRENT_DATE)::DATE
 ) w
 LEFT JOIN weekly_hours h
     ON u.clockify_user_id = h.clockify_user_id
     AND h.week_start = w.week_start
+WHERE u.user_created_date <= w.week_start + 6
 GROUP BY
     u.line_of_business,
     u.practice_alignment,
@@ -3342,26 +3311,8 @@ user_weekly_hours AS (
         DATE_TRUNC('week', te.entry_date)::DATE AS week_start,
         SUM(te.duration_hours) AS hours_logged,
         SUM(CASE WHEN te.billable THEN te.duration_hours ELSE 0 END) AS billable_hours,
-        SUM(CASE
-            WHEN te.billable = FALSE
-             AND (
-                 cp.project_type IN ('Non Bill Productive', 'Overtime', 'Presales')
-                 OR (cp.project_type IS NULL AND mc.client_lower IS NOT NULL)
-                 OR (cp.project_type NOT IN ('Non Bill Productive','Non Bill Non Productive','Overtime','Presales')
-                     AND cp.project_type IS NOT NULL AND mc.client_lower IS NOT NULL)
-             )
-            THEN te.duration_hours ELSE 0
-        END) AS nb_productive_hours,
-        SUM(CASE
-            WHEN te.billable = FALSE
-             AND NOT (
-                 cp.project_type IN ('Non Bill Productive', 'Overtime', 'Presales')
-                 OR (cp.project_type IS NULL AND mc.client_lower IS NOT NULL)
-                 OR (cp.project_type NOT IN ('Non Bill Productive','Non Bill Non Productive','Overtime','Presales')
-                     AND cp.project_type IS NOT NULL AND mc.client_lower IS NOT NULL)
-             )
-            THEN te.duration_hours ELSE 0
-        END) AS nb_non_productive_hours
+        SUM(CASE WHEN te.is_nb_productive = TRUE THEN te.duration_hours ELSE 0 END) AS nb_productive_hours,
+        SUM(CASE WHEN te.is_nb_non_productive = TRUE THEN te.duration_hours ELSE 0 END) AS nb_non_productive_hours
     FROM clockify_detailed_time_entries te
     LEFT JOIN clockify_projects cp
         ON te.clockify_project_id = cp.clockify_project_id
@@ -3390,8 +3341,8 @@ SELECT
     GREATEST(u.weekly_capacity - COALESCE(h.hours_logged, 0), 0) AS non_logged_hours,
     ROUND((COALESCE(h.billable_hours, 0) / NULLIF(u.weekly_capacity, 0) * 100)::NUMERIC, 1) AS billable_util_pct,
     ROUND(((COALESCE(h.billable_hours, 0) + COALESCE(h.nb_productive_hours, 0)) / NULLIF(u.weekly_capacity, 0) * 100)::NUMERIC, 1) AS productive_util_pct,
-    CASE WHEN COALESCE(h.hours_logged, 0) >= u.weekly_capacity * 0.9 THEN 'Compliant' ELSE 'Non-Compliant' END AS compliance_status,
-    CASE WHEN COALESCE(h.hours_logged, 0) >= u.weekly_capacity * 0.9 THEN 1 ELSE 0 END AS is_compliant,
+    CASE WHEN COALESCE(h.hours_logged, 0) > 0 THEN 'Compliant' ELSE 'Non-Compliant' END AS compliance_status,
+    CASE WHEN COALESCE(h.hours_logged, 0) > 0 THEN 1 ELSE 0 END AS is_compliant,
     -- On-time delivery columns (NULL placeholders — on-time data is org-level, not per-staff)
     NULL::NUMERIC AS ontime_pct_in_week,
     NULL::INTEGER AS projects_on_time_in_week,

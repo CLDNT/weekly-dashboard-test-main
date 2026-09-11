@@ -113,7 +113,11 @@ def take_weekly_snapshot(engine, week_start: Optional[date] = None) -> dict:
 def _compute_utilization(conn, week_start: date, week_end: date) -> dict:
     """Compute billable/productive utilisation and time compliance."""
 
-    # Available hours = SUM(daily_capacity * 5) for active, non-exempt users
+    # Available hours = SUM(daily_capacity * 5) for active, non-exempt users.
+    # Includes the new-user cutoff (created on/before the week end) so headcount
+    # and the util denominator are point-in-time consistent with
+    # vw_practice_kpi_weekly / vw_kpi_staff_weekly (reconciliation fix — without
+    # it, historical weeks counted today's roster and drifted by joiners).
     avail = conn.execute(text("""
         SELECT
             COALESCE(SUM(daily_capacity * 5), 0)  AS total_available,
@@ -124,13 +128,20 @@ def _compute_utilization(conn, week_start: date, week_end: date) -> dict:
           AND (time_submission IS NULL OR UPPER(TRIM(time_submission)) != 'NO')
           AND NOT COALESCE(reporting_excluded, FALSE)
           AND (pod_assignment IS NULL OR pod_assignment NOT ILIKE '%exempt%')
-    """)).fetchone()
+          AND created_at::DATE <= :we
+    """), {'we': week_end}).fetchone()
 
     total_available = float(avail.total_available or 0)
     active_count    = int(avail.active_count or 0)
 
     # Billable and presales hours for the week
-    # JOIN clockify_users to respect reporting_excluded flag (C1 fix)
+    # JOIN clockify_users to respect the canonical active-user population — must
+    # match the `avail` denominator above and vw_kpi_staff_weekly:
+    #   status='active', daily_capacity>0, time_submission!='NO',
+    #   not reporting_excluded, pod not exempt.
+    # (Previously only reporting_excluded + exempt-pod were applied here, which
+    #  let billable hours from inactive / zero-capacity / opted-out users inflate
+    #  the total above Staff/Practice — reconciliation fix.)
     hours = conn.execute(text("""
         SELECT
             COALESCE(SUM(CASE WHEN te.billable = TRUE THEN te.duration_hours ELSE 0 END), 0)
@@ -145,6 +156,9 @@ def _compute_utilization(conn, week_start: date, week_end: date) -> dict:
                ON te.clockify_project_id = cp.clockify_project_id
         WHERE te.entry_date BETWEEN :ws AND :we
           AND te.duration_hours > 0
+          AND u.status = 'active'
+          AND u.daily_capacity > 0
+          AND (u.time_submission IS NULL OR UPPER(TRIM(u.time_submission)) != 'NO')
           AND NOT COALESCE(u.reporting_excluded, FALSE)
           AND (u.pod_assignment IS NULL OR u.pod_assignment NOT ILIKE '%exempt%')
     """), {'ws': week_start, 'we': week_end}).fetchone()
@@ -162,8 +176,11 @@ def _compute_utilization(conn, week_start: date, week_end: date) -> dict:
           AND te.duration_hours > 0
           AND te.is_nb_productive = TRUE
           AND u.status = 'active'
+          AND u.daily_capacity > 0
+          AND (u.time_submission IS NULL OR UPPER(TRIM(u.time_submission)) != 'NO')
           AND NOT COALESCE(u.reporting_excluded, FALSE)
           AND (u.pod_assignment IS NULL OR u.pod_assignment NOT ILIKE '%exempt%')
+          AND u.created_at::DATE <= :we
     """), {'ws': week_start, 'we': week_end}).fetchone()
     nb_productive_hrs  = float(nb_productive_result.productive_nb_hours or 0)
 
@@ -172,7 +189,11 @@ def _compute_utilization(conn, week_start: date, week_end: date) -> dict:
     billable_util_pct   = round(billable_hours  / total_available * 100, 2) if total_available else None
     productive_util_pct = round(productive_hours / total_available * 100, 2) if total_available else None
 
-    # Time compliance: % of active users who logged >= 90% of weekly capacity
+    # Time compliance: % of active users who logged ANY time (hours_logged > 0),
+    # org-level (compliant / total). This is the least-restrictive definition,
+    # matched by vw_kpi_staff_weekly.is_compliant and
+    # vw_practice_kpi_weekly.compliance_pct. Includes the new-user cutoff
+    # (created on/before week end) so the population matches those views.
     compliance = conn.execute(text("""
         WITH user_hours AS (
             SELECT
@@ -188,6 +209,7 @@ def _compute_utilization(conn, week_start: date, week_end: date) -> dict:
               AND (u.time_submission IS NULL OR UPPER(TRIM(u.time_submission)) != 'NO')
               AND NOT COALESCE(u.reporting_excluded, FALSE)
               AND (u.pod_assignment IS NULL OR u.pod_assignment NOT ILIKE '%exempt%')
+              AND u.created_at::DATE <= :we
             GROUP BY u.clockify_user_id, u.daily_capacity
         )
         SELECT
@@ -202,33 +224,23 @@ def _compute_utilization(conn, week_start: date, week_end: date) -> dict:
     missing_time_count = int(compliance.no_time_submitted  or 0)
     time_compliance_pct = round(compliant / total_users * 100, 2) if total_users else None
 
-    # NB Non-Productive:
-    #   explicit: is_nb_non_productive = TRUE (from Clockify custom field)
-    #   implicit: capacity gap (unlogged time)
+    # NB Non-Productive: custom-field-only.
+    #   Comes ONLY from entries whose project is marked "Non Bill Non Productive"
+    #   (Clockify project-level CHECKBOX custom field -> te.is_nb_non_productive).
+    #   Capacity-gap / unlogged time is NOT counted (removed per definition).
     nb_nonproductive_result = conn.execute(text("""
-        SELECT
-            COALESCE(SUM(per_user.nb_np_logged + per_user.capacity_gap), 0) AS nb_nonproductive_hours
-        FROM (
-            SELECT
-                u.clockify_user_id,
-                -- Explicit NB Non-Productive: from Clockify custom field
-                COALESCE(SUM(
-                    CASE WHEN te.is_nb_non_productive = TRUE THEN te.duration_hours ELSE 0 END
-                ), 0) AS nb_np_logged,
-                -- Implicit NB Non-Productive: capacity gap (unlogged time)
-                GREATEST(0, (u.daily_capacity * 5) - COALESCE(SUM(te.duration_hours), 0)) AS capacity_gap
-            FROM clockify_users u
-            LEFT JOIN clockify_detailed_time_entries te
-                   ON te.clockify_user_id = u.clockify_user_id
-                  AND te.entry_date BETWEEN :ws AND :we
-                  AND te.duration_hours > 0
-            WHERE u.status = 'active'
-              AND u.daily_capacity > 0
-              AND (u.time_submission IS NULL OR UPPER(TRIM(u.time_submission)) != 'NO')
-              AND NOT COALESCE(u.reporting_excluded, FALSE)
-              AND (u.pod_assignment IS NULL OR u.pod_assignment NOT ILIKE '%exempt%')
-            GROUP BY u.clockify_user_id, u.daily_capacity
-        ) per_user
+        SELECT COALESCE(SUM(te.duration_hours), 0) AS nb_nonproductive_hours
+        FROM clockify_detailed_time_entries te
+        JOIN clockify_users u ON te.clockify_user_id = u.clockify_user_id
+        WHERE te.entry_date BETWEEN :ws AND :we
+          AND te.duration_hours > 0
+          AND te.is_nb_non_productive = TRUE
+          AND u.status = 'active'
+          AND u.daily_capacity > 0
+          AND (u.time_submission IS NULL OR UPPER(TRIM(u.time_submission)) != 'NO')
+          AND NOT COALESCE(u.reporting_excluded, FALSE)
+          AND (u.pod_assignment IS NULL OR u.pod_assignment NOT ILIKE '%exempt%')
+          AND u.created_at::DATE <= :we
     """), {'ws': week_start, 'we': week_end}).fetchone()
     nb_nonproductive_hrs = float(nb_nonproductive_result.nb_nonproductive_hours or 0)
 
@@ -363,22 +375,24 @@ def _compute_project_metrics(conn, category: str,
 def _compute_escalation_metrics(conn, week_start: date) -> dict:
     year_start = date(week_start.year, 1, 1)
 
+    # Definition aligned with vw_escalations_by_customer (the Escalations sheet):
+    #   open      = status_category != 'Done' AND customer_name IS NOT NULL
+    #   resolved  = status_category = 'Done'
+    # The customer_name IS NOT NULL filter matches the sheet, which excludes
+    # escalations with no customer assigned (e.g. ES-232). Without it the OKR
+    # tile counted customer-less escalations the sheet did not.
     row = conn.execute(text("""
         SELECT
-            SUM(CASE WHEN resolution_date IS NULL
-                      AND COALESCE(status_category,'') NOT IN ('Done','Resolved')
+            SUM(CASE WHEN COALESCE(status_category,'') <> 'Done'
                      THEN 1 ELSE 0 END)                          AS open_escalations,
             SUM(CASE WHEN priority IN ('Highest','High')
-                      AND resolution_date IS NULL
-                      AND COALESCE(status_category,'') NOT IN ('Done','Resolved')
+                      AND COALESCE(status_category,'') <> 'Done'
                      THEN 1 ELSE 0 END)                          AS high_priority,
             SUM(CASE WHEN priority = 'Medium'
-                      AND resolution_date IS NULL
-                      AND COALESCE(status_category,'') NOT IN ('Done','Resolved')
+                      AND COALESCE(status_category,'') <> 'Done'
                      THEN 1 ELSE 0 END)                          AS med_priority,
             ROUND(AVG(CASE
-                WHEN resolution_date IS NULL
-                 AND COALESCE(status_category,'') NOT IN ('Done','Resolved')
+                WHEN COALESCE(status_category,'') <> 'Done'
                 THEN CURRENT_DATE - created_date::DATE
                 ELSE NULL END)::NUMERIC, 2)                      AS avg_days_open,
             SUM(CASE
@@ -386,6 +400,7 @@ def _compute_escalation_metrics(conn, week_start: date) -> dict:
                  AND resolution_date >= :ys
                 THEN 1 ELSE 0 END)                               AS resolved_ytd
         FROM escalations
+        WHERE customer_name IS NOT NULL
     """), {'ys': year_start}).fetchone()
 
     return {

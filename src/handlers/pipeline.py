@@ -63,10 +63,11 @@ def run_pipeline(event: dict, context: Any, secrets: dict) -> dict:
       1.  apply_database_views (non-fatal)
       2.  run_import (Clockify)
       3.  run_jira_import
+      3b. run_escalations_import (non-fatal) — MUST precede the KPI snapshot
       4.  kpi_snapshot (non-fatal)
       5.  analyze_project_health (non-fatal)
       6.  run_mc_v2_audit (non-fatal)
-      7.  run_escalations_import (non-fatal)
+      7.  (escalations import moved to 3b)
       8.  collect statistics (SessionLocal / ImportLog)
       9.  compliance snapshot query (weekly only, non-fatal)
       10. refresh all QuickSight SPICE datasets
@@ -153,6 +154,22 @@ def run_pipeline(event: dict, context: Any, secrets: dict) -> dict:
         + jira_stats.get('ps_project_status', {}).get('updated', 0)
     )
 
+    # ── 3b. Escalations import ───────────────────────────────────────────────
+    # MUST run before the KPI snapshot (step 4): the snapshot's
+    # _compute_escalation_metrics reads the escalations table, so escalation
+    # data must be populated first. Previously this ran after the snapshot,
+    # causing open_escalations to be written as 0 every cycle.
+    print("Starting escalations import...")
+    try:
+        from src.integrations.import_escalations import run_escalations_import
+        from src.handlers.quicksight import refresh_quicksight_datasets as _qs_refresh
+        esc_summary = run_escalations_import()
+        _qs_refresh(['escalations-detail', 'escalations-by-customer'])
+        print(f"Escalations import completed: {esc_summary}")
+    except Exception as esc_exc:
+        print(f"Escalations import failed (non-fatal): {esc_exc}")
+        run_errors.append(f"Escalations import: {esc_exc}")
+
     # ── 4. KPI snapshot ──────────────────────────────────────────────────────
     print("Computing weekly KPI snapshot...")
     try:
@@ -195,16 +212,8 @@ def run_pipeline(event: dict, context: Any, secrets: dict) -> dict:
         run_errors.append(f"MC V2 Audit: {audit_exc}")
 
     # ── 7. Escalations import ────────────────────────────────────────────────
-    print("Starting escalations import...")
-    try:
-        from src.integrations.import_escalations import run_escalations_import
-        from src.handlers.quicksight import refresh_quicksight_datasets as _qs_refresh
-        esc_summary = run_escalations_import()
-        _qs_refresh(['escalations-detail', 'escalations-by-customer'])
-        print(f"Escalations import completed: {esc_summary}")
-    except Exception as esc_exc:
-        print(f"Escalations import failed (non-fatal): {esc_exc}")
-        run_errors.append(f"Escalations import: {esc_exc}")
+    # (Moved to step 3b — runs before the KPI snapshot so escalation counts are
+    #  populated before _compute_escalation_metrics reads the table.)
 
     # ── 8. Collect statistics ────────────────────────────────────────────────
     # Import SessionLocal and models here after secrets are set
